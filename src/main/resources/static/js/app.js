@@ -32,12 +32,17 @@ document.addEventListener('DOMContentLoaded', () => {
   bindLogin();
   bindNav();
   bindSidebar();
+  id('loginScreen').style.display = 'none';
+  id('appShell').style.display = 'none';
+
   const saved = localStorage.getItem('authToken');
   const savedUser = localStorage.getItem('authUser');
   if (saved && savedUser) {
     State.token = saved;
     State.user  = JSON.parse(savedUser);
     showApp();
+  } else {
+    showLoginScreen();
   }
 });
 
@@ -138,7 +143,30 @@ function showApp() {
   setupNotifications();
   startAutoSync();
   setupNotificationBanner();
-  navigateTo(State.user?.role === 'ADMIN' ? 'user-mgmt' : 'dashboard');
+
+  const savedPage = localStorage.getItem('lastPage');
+  const savedWoId = localStorage.getItem('lastWoId');
+  const allowedPages = ['dashboard','create-wo','all-wo','detail','user-mgmt'];
+  let targetPage = savedPage && allowedPages.includes(savedPage) ? savedPage : null;
+
+  if (State.user?.role === 'ADMIN') {
+    targetPage = targetPage === 'dashboard' || targetPage === 'create-wo' || targetPage === 'all-wo' || targetPage === 'detail'
+      ? 'user-mgmt'
+      : 'user-mgmt';
+  } else {
+    if (targetPage === 'user-mgmt') targetPage = 'dashboard';
+    if (!targetPage) targetPage = 'dashboard';
+  }
+
+  navigateTo(targetPage);
+  if (targetPage === 'detail' && savedWoId) {
+    openWoDetail(parseInt(savedWoId, 10));
+  }
+}
+
+function showLoginScreen() {
+  id('appShell').style.display = 'none';
+  id('loginScreen').style.display = 'flex';
 }
 
 function logout() {
@@ -148,6 +176,7 @@ function logout() {
   }
   State.token = null; State.user = null;
   localStorage.removeItem('authToken'); localStorage.removeItem('authUser');
+  localStorage.removeItem('lastPage'); localStorage.removeItem('lastWoId');
   id('appShell').style.display = 'none';
   id('loginScreen').style.display = 'flex';
   id('loginUsername').value = '';
@@ -197,6 +226,11 @@ function bindNav() {
 
 function navigateTo(page) {
   State.page = page;
+  localStorage.setItem('lastPage', page);
+  if (page !== 'detail') {
+    localStorage.removeItem('lastWoId');
+  }
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
@@ -638,6 +672,7 @@ async function submitCreateWo() {
 // ── DETAIL PAGE ─────────────────────────────────────────────────────
 async function openWoDetail(id_) {
   navigateTo('detail');
+  localStorage.setItem('lastWoId', id_);
   id('woDetailContent').innerHTML = '<div class="loading-state">Loading…</div>';
   try {
     const res = await api(`/api/workorders/${id_}`);
