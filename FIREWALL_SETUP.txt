@@ -1,0 +1,21 @@
+================================================================
+  WINDOWS FIREWALL SETUP (Required for LAN access on port 8123)
+================================================================
+
+Run this command ONCE as Administrator in Command Prompt or 
+PowerShell to allow other devices to connect:
+
+  netsh advfirewall firewall add rule name="InvoiceTracker-8123" ^
+    dir=in action=allow protocol=TCP localport=8123
+
+Or using PowerShell (run as Admin):
+  New-NetFirewallRule -DisplayName "InvoiceTracker-8123" `
+    -Direction Inbound -Protocol TCP -LocalPort 8123 -Action Allow
+
+To verify the app is listening on all interfaces, you should see:
+  TCP    0.0.0.0:8123    (when running `netstat -an | findstr 8123`)
+
+After this, all devices on 192.168.151.x network can access:
+  http://192.168.151.7:8123
+
+================================================================
