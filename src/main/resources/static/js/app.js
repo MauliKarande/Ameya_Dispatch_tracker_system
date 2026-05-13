@@ -326,14 +326,16 @@ function bindDashboardControls() {
   });
 }
 
+const onDashboardFilterChange = () => applyFilters();
+
 function bindDashboardFilters() {
   const filterIds = ['filterCustomer','filterMonth','filterYear','filterDateFrom','filterDateTo','filterInvDateFrom','filterInvDateTo','filterInvoiceType','filterStatus'];
   filterIds.forEach(fid => {
     const el = id(fid);
     if (!el) return;
     const evt = fid === 'filterCustomer' ? 'input' : 'change';
-    el.removeEventListener(evt, applyFilters);
-    el.addEventListener(evt, applyFilters);
+    el.removeEventListener(evt, onDashboardFilterChange);
+    el.addEventListener(evt, onDashboardFilterChange);
   });
   const clearBtn = id('filterClearBtn');
   if (clearBtn) {
@@ -362,7 +364,11 @@ function isDashboardFilterActive() {
 }
 
 function applyFilters(sourceList = State.woList, returnOnly = false) {
-  const q    = (id('filterCustomer')?.value || '').toLowerCase();
+  if (sourceList && sourceList.target && typeof sourceList.preventDefault === 'function') {
+    sourceList = State.woList;
+    returnOnly = false;
+  }
+  const q    = String(id('filterCustomer')?.value || '').toLowerCase();
   const m    = id('filterMonth')?.value;
   const y    = id('filterYear')?.value;
   const df   = id('filterDateFrom')?.value;
@@ -372,11 +378,17 @@ function applyFilters(sourceList = State.woList, returnOnly = false) {
   const it   = id('filterInvoiceType')?.value;
   const s    = id('filterStatus')?.value;
   let list   = sourceList;
-  if (q)   list = list.filter(w => w.customerName.toLowerCase().includes(q));
-  if (m)   list = list.filter(w => new Date(w.woDate + 'T00:00:00').getMonth()+1 === parseInt(m, 10));
-  if (y)   list = list.filter(w => new Date(w.woDate + 'T00:00:00').getFullYear() === parseInt(y, 10));
-  if (df)  list = list.filter(w => w.woDate >= df);
-  if (dt)  list = list.filter(w => w.woDate <= dt);
+  if (q) {
+    list = list.filter(w => {
+      const customerMatch = String(w.customerName || '').toLowerCase().includes(q);
+      const invoiceMatch = String(w.invoiceNumber || '').toLowerCase().includes(q);
+      return customerMatch || invoiceMatch;
+    });
+  }
+  if (m)   list = list.filter(w => w.woDate && new Date(w.woDate + 'T00:00:00').getMonth()+1 === parseInt(m, 10));
+  if (y)   list = list.filter(w => w.woDate && new Date(w.woDate + 'T00:00:00').getFullYear() === parseInt(y, 10));
+  if (df)  list = list.filter(w => w.woDate && w.woDate >= df);
+  if (dt)  list = list.filter(w => w.woDate && w.woDate <= dt);
   if (idf) list = list.filter(w => w.invoiceDate && w.invoiceDate >= idf);
   if (idt) list = list.filter(w => w.invoiceDate && w.invoiceDate <= idt);
   if (it)  list = list.filter(w => (w.invoiceType || 'Commercial') === it);
