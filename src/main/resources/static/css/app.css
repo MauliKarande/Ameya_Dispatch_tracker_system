@@ -271,7 +271,7 @@ body {
 .top-bar-right { position:relative; }
 
 /* ── PAGES ─────────────────────────────────────────────────────── */
-.page { display:none; flex:1; overflow-y:auto; padding:12px 16px; min-height:0; }
+.page { display:none; flex:1; overflow:hidden; padding:12px 16px; min-height:0; }
 .page.active { display:flex; flex-direction:column; }
 .page-header {
   display:flex; justify-content:space-between; align-items:flex-start;
@@ -340,7 +340,8 @@ body {
 .table-wrap { flex:1; overflow:auto; min-height:0; position:relative; }
 .table-card {
   background:var(--surface); border-radius:var(--radius);
-  box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; height:100%;
+  box-shadow:var(--shadow); overflow:visible; display:flex; flex-direction:column;
+  min-height:0;
 }
 .wo-table {
   width:100%; border-collapse:collapse; font-size:.75rem;
@@ -351,9 +352,9 @@ body {
   text-align:left; font-weight:600; font-size:.7rem;
   text-transform:uppercase; letter-spacing:.04em;
   color:var(--text2); border-bottom:1px solid var(--border);
-  white-space:nowrap; position:sticky; top:0; z-index:2;
+  white-space:nowrap; position:sticky; top:0; z-index:10;
 }
-.wo-table thead th { background:var(--surface); }
+.wo-table thead th { background:var(--surface2); }
 .wo-table td {
   padding:7px 10px; border-bottom:1px solid var(--border);
   vertical-align:middle;
@@ -388,6 +389,7 @@ body {
 .form-card {
   background:var(--surface); border-radius:var(--radius);
   box-shadow:var(--shadow); padding:24px; max-width:900px;
+  overflow-y:auto;
 }
 .form-grid {
   display:grid; grid-template-columns:1fr 1fr;
