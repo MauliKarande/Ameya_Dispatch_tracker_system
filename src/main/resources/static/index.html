@@ -134,16 +134,24 @@
           <h2 class="page-title">Dashboard</h2>
           <p class="page-sub">Dispatch List overview — newest first</p>
         </div>
-        <button class="btn btn-primary nav-only-gm" data-page="create-wo">＋ New Dispatch</button>
+        <div class="page-actions">
+          <div class="dashboard-view-buttons">
+            <button class="btn btn-outline btn-sm active" id="dashInProgressBtn">In Progress</button>
+            <button class="btn btn-outline btn-sm" id="dashCompletedBtn">Completed</button>
+            <button class="btn btn-outline btn-sm" id="dashAllBtn">All</button>
+          </div>
+          <button class="btn btn-outline btn-sm" id="toggleFilterBarBtn">Search / Filter</button>
+          <button class="btn btn-primary nav-only-gm" data-page="create-wo">＋ New Dispatch</button>
+        </div>
       </div>
-      <div class="stats-row">
-        <div class="stat-card stat-total">  <div class="stat-num" id="statTotal">0</div>     <div class="stat-label">Total Dispatches</div></div>
+      <div class="stats-row compact-stats">
+        <div class="stat-card stat-total">  <div class="stat-num" id="statTotal">0</div>     <div class="stat-label">Total</div></div>
         <div class="stat-card stat-progress"><div class="stat-num" id="statInProgress">0</div><div class="stat-label">In Progress</div></div>
         <div class="stat-card stat-complete"><div class="stat-num" id="statCompleted">0</div> <div class="stat-label">Completed</div></div>
         <div class="stat-card stat-revised"> <div class="stat-num" id="statRevised">0</div>   <div class="stat-label">Revised</div></div>
         <div class="stat-card stat-issue">   <div class="stat-num" id="statIssues">0</div>    <div class="stat-label">Has Issues</div></div>
       </div>
-      <div class="filter-bar">
+      <div class="filter-bar hidden" id="dashboardFilterBar">
         <input class="filter-input" id="filterCustomer" placeholder="🔍  Search customer…" type="text"/>
         <select class="filter-select" id="filterMonth">
           <option value="">All Months</option>

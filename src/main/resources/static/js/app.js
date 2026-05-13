@@ -16,6 +16,7 @@ const State = {
   customers: [],
   shipmentModes: [],
   invoiceTypes: [],
+  dashboardView: 'IN_PROGRESS',
   sidebarExpanded: localStorage.getItem('sidebarExpanded') !== 'false',
   darkMode: localStorage.getItem('darkTheme') === 'true',
   notifications: JSON.parse(localStorage.getItem('notifications') || '[]'),
@@ -210,7 +211,13 @@ function navigateTo(page) {
   id('topBarTitle').textContent = info.title;
   document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
 
-  if (page === 'dashboard') loadWoList();
+  if (page === 'dashboard') {
+    if (State.woList.length) {
+      renderDashboard();
+    } else {
+      loadWoList();
+    }
+  }
   if (page === 'create-wo') initCreateForm();
   if (page === 'all-wo') loadAllWo();
   if (page === 'user-mgmt') loadUserManagement();
@@ -270,15 +277,56 @@ function formatDate(val) {
 }
 
 function renderDashboard() {
-  const list = State.woList;
-  id('statTotal').textContent = list.length;
-  id('statInProgress').textContent = list.filter(w => w.status === 'IN_PROGRESS').length;
-  id('statCompleted').textContent  = list.filter(w => w.status === 'COMPLETED').length;
-  id('statRevised').textContent    = list.filter(w => w.status === 'REVISED').length;
-  id('statIssues').textContent     = list.filter(w => w.hasInvoiceIssue).length;
-  renderWoTable(list);
+  const statsSource = getDashboardStatsList();
+  id('statTotal').textContent = statsSource.length;
+  id('statInProgress').textContent = statsSource.filter(w => w.status === 'IN_PROGRESS').length;
+  id('statCompleted').textContent  = statsSource.filter(w => w.status === 'COMPLETED').length;
+  id('statRevised').textContent    = statsSource.filter(w => w.status === 'REVISED').length;
+  id('statIssues').textContent     = statsSource.filter(w => w.hasInvoiceIssue).length;
 
-  // Bind filter events (remove first to avoid duplicates)
+  bindDashboardControls();
+  bindDashboardFilters();
+  renderWoTable(getDashboardVisibleList());
+}
+
+function isCurrentMonth(wo) {
+  if (!wo?.woDate) return false;
+  const date = new Date(wo.woDate + 'T00:00:00');
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+}
+
+function getDashboardStatsList() {
+  if (isDashboardFilterActive()) {
+    return applyFilters(State.woList, true);
+  }
+  if (State.dashboardView === 'ALL') {
+    return State.woList;
+  }
+  return getDashboardBaseList(State.woList).filter(isCurrentMonth);
+}
+
+function bindDashboardControls() {
+  const toggleBtn = id('toggleFilterBarBtn');
+  const filterBar = id('dashboardFilterBar');
+  if (toggleBtn && filterBar) {
+    toggleBtn.onclick = () => {
+      filterBar.classList.toggle('hidden');
+      toggleBtn.textContent = filterBar.classList.contains('hidden') ? 'Search / Filter' : 'Hide Search';
+    };
+  }
+
+  ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn'].forEach(btnId => {
+    const btn = id(btnId);
+    if (!btn) return;
+    btn.onclick = () => {
+      State.dashboardView = btnId === 'dashCompletedBtn' ? 'COMPLETED' : btnId === 'dashAllBtn' ? 'ALL' : 'IN_PROGRESS';
+      renderDashboard();
+    };
+  });
+}
+
+function bindDashboardFilters() {
   const filterIds = ['filterCustomer','filterMonth','filterYear','filterDateFrom','filterDateTo','filterInvDateFrom','filterInvDateTo','filterInvoiceType','filterStatus'];
   filterIds.forEach(fid => {
     const el = id(fid);
@@ -287,11 +335,33 @@ function renderDashboard() {
     el.removeEventListener(evt, applyFilters);
     el.addEventListener(evt, applyFilters);
   });
-  id('filterClearBtn')?.removeEventListener('click', clearFilters);
-  id('filterClearBtn')?.addEventListener('click', clearFilters);
+  const clearBtn = id('filterClearBtn');
+  if (clearBtn) {
+    clearBtn.removeEventListener('click', clearFilters);
+    clearBtn.addEventListener('click', clearFilters);
+  }
 }
 
-function applyFilters() {
+function getDashboardVisibleList() {
+  const baseList = isDashboardFilterActive() ? State.woList : getDashboardBaseList(State.woList);
+  return applyFilters(baseList, true);
+}
+
+function getDashboardBaseList(list) {
+  if (State.dashboardView === 'COMPLETED') return list.filter(w => w.status === 'COMPLETED');
+  if (State.dashboardView === 'ALL') return list;
+  return list.filter(w => w.status === 'IN_PROGRESS');
+}
+
+function isDashboardFilterActive() {
+  return ['filterCustomer','filterMonth','filterYear','filterDateFrom','filterDateTo','filterInvDateFrom','filterInvDateTo','filterInvoiceType','filterStatus']
+    .some(fid => {
+      const el = id(fid);
+      return el && String(el.value).trim() !== '';
+    });
+}
+
+function applyFilters(sourceList = State.woList, returnOnly = false) {
   const q    = (id('filterCustomer')?.value || '').toLowerCase();
   const m    = id('filterMonth')?.value;
   const y    = id('filterYear')?.value;
@@ -301,23 +371,24 @@ function applyFilters() {
   const idt  = id('filterInvDateTo')?.value;
   const it   = id('filterInvoiceType')?.value;
   const s    = id('filterStatus')?.value;
-  let list   = State.woList;
+  let list   = sourceList;
   if (q)   list = list.filter(w => w.customerName.toLowerCase().includes(q));
-  if (m)   list = list.filter(w => new Date(w.woDate + 'T00:00:00').getMonth()+1 === parseInt(m));
-  if (y)   list = list.filter(w => new Date(w.woDate + 'T00:00:00').getFullYear() === parseInt(y));
+  if (m)   list = list.filter(w => new Date(w.woDate + 'T00:00:00').getMonth()+1 === parseInt(m, 10));
+  if (y)   list = list.filter(w => new Date(w.woDate + 'T00:00:00').getFullYear() === parseInt(y, 10));
   if (df)  list = list.filter(w => w.woDate >= df);
   if (dt)  list = list.filter(w => w.woDate <= dt);
   if (idf) list = list.filter(w => w.invoiceDate && w.invoiceDate >= idf);
   if (idt) list = list.filter(w => w.invoiceDate && w.invoiceDate <= idt);
   if (it)  list = list.filter(w => (w.invoiceType || 'Commercial') === it);
   if (s)   list = list.filter(w => w.status === s);
+  if (returnOnly) return list;
   renderWoTable(list);
 }
 
 function clearFilters() {
   ['filterCustomer','filterMonth','filterYear','filterDateFrom','filterDateTo','filterInvDateFrom','filterInvDateTo','filterInvoiceType','filterStatus']
     .forEach(fid => { const el = id(fid); if (el) el.value = ''; });
-  renderWoTable(State.woList);
+  renderWoTable(getDashboardBaseList(State.woList));
 }
 
 function renderWoTable(list) {

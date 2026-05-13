@@ -277,6 +277,12 @@ body {
   display:flex; justify-content:space-between; align-items:flex-start;
   margin-bottom:12px; gap:12px; flex-shrink:0;
 }
+.page-actions {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end;
+}
+.dashboard-view-buttons {
+  display:flex; gap:6px; flex-wrap:wrap;
+}
 .page-title { font-size:1.3rem; font-weight:700; color:var(--text); }
 .page-sub { color:var(--text2); font-size:.82rem; margin-top:2px; }
 .back-row { display:flex; align-items:center; gap:12px; }
@@ -292,13 +298,16 @@ body {
   display:grid; grid-template-columns:repeat(5,1fr);
   gap:8px; margin-bottom:10px; flex-shrink:0;
 }
+.stats-row.compact-stats .stat-card {
+  padding:8px 10px;
+}
 .stat-card {
   background:var(--surface); border-radius:var(--radius);
   padding:10px 14px; border-top:3px solid transparent;
   box-shadow:var(--shadow);
 }
-.stat-num { font-size:1.4rem; font-weight:700; }
-.stat-label { font-size:.7rem; color:var(--text2); margin-top:1px; }
+.stat-num { font-size:1.2rem; font-weight:700; }
+.stat-label { font-size:.68rem; color:var(--text2); margin-top:2px; }
 .stat-total   { border-color:#6366f1; }
 .stat-progress{ border-color:var(--blue-600); }
 .stat-complete{ border-color:var(--green); }
@@ -309,6 +318,9 @@ body {
 .filter-bar {
   display:flex; gap:8px; align-items:center;
   flex-wrap:wrap; margin-bottom:10px; flex-shrink:0;
+}
+.filter-bar.hidden {
+  display:none;
 }
 .filter-input, .filter-select {
   height:32px; padding:0 10px;
@@ -325,22 +337,23 @@ body {
 }
 
 /* ── TABLE ─────────────────────────────────────────────────────── */
-.table-wrap { flex:1; overflow:auto; min-height:0; }
+.table-wrap { flex:1; overflow:auto; min-height:0; position:relative; }
 .table-card {
   background:var(--surface); border-radius:var(--radius);
-  box-shadow:var(--shadow); overflow:hidden;
+  box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; height:100%;
 }
 .wo-table {
   width:100%; border-collapse:collapse; font-size:.75rem;
-  min-width:1100px;
+  min-width:1100px; table-layout:fixed;
 }
 .wo-table th {
   background:var(--surface2); padding:7px 10px;
   text-align:left; font-weight:600; font-size:.7rem;
   text-transform:uppercase; letter-spacing:.04em;
   color:var(--text2); border-bottom:1px solid var(--border);
-  white-space:nowrap; position:sticky; top:0; z-index:1;
+  white-space:nowrap; position:sticky; top:0; z-index:2;
 }
+.wo-table thead th { background:var(--surface); }
 .wo-table td {
   padding:7px 10px; border-bottom:1px solid var(--border);
   vertical-align:middle;
