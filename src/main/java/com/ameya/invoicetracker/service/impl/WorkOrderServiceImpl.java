@@ -425,9 +425,9 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("hh:mm a, dd MMM yyyy");
 
     private WorkOrderSummaryDTO toSummaryDTO(WorkOrder wo) {
-        Optional<FileStorage> excel = fileStorageRepository.findTopByWorkOrderIdAndFileTypeOrderByVersionDesc(wo.getId(), FileStorage.FileType.EXCEL);
-        Optional<FileStorage> pdf   = fileStorageRepository.findTopByWorkOrderIdAndFileTypeOrderByVersionDesc(wo.getId(), FileStorage.FileType.PDF);
-        Optional<FileStorage> packing = fileStorageRepository.findTopByWorkOrderIdAndFileTypeOrderByVersionDesc(wo.getId(), FileStorage.FileType.PACKING);
+        Optional<FileStorage> excel = fileStorageRepository.findTopActiveByWorkOrderIdAndFileType(wo.getId(), FileStorage.FileType.EXCEL);
+        Optional<FileStorage> pdf   = fileStorageRepository.findTopActiveByWorkOrderIdAndFileType(wo.getId(), FileStorage.FileType.PDF);
+        Optional<FileStorage> packing = fileStorageRepository.findTopActiveByWorkOrderIdAndFileType(wo.getId(), FileStorage.FileType.PACKING);
         return WorkOrderSummaryDTO.builder()
             .id(wo.getId()).woNumber(wo.getWoNumber()).customerName(wo.getCustomerName())
             .shipmentMode(wo.getShipmentMode()).invoiceType(wo.getInvoiceType())
@@ -454,13 +454,13 @@ public class WorkOrderServiceImpl implements WorkOrderService {
 
     private WorkOrderDetailDTO toDetailDTO(WorkOrder wo) {
         List<FileDTO> excelFiles = fileStorageRepository
-            .findByWorkOrderIdAndFileTypeOrderByVersionDesc(wo.getId(), FileStorage.FileType.EXCEL)
+            .findActiveByWorkOrderIdAndFileType(wo.getId(), FileStorage.FileType.EXCEL)
             .stream().map(this::toFileDTO).collect(Collectors.toList());
         List<FileDTO> pdfFiles = fileStorageRepository
-            .findByWorkOrderIdAndFileTypeOrderByVersionDesc(wo.getId(), FileStorage.FileType.PDF)
+            .findActiveByWorkOrderIdAndFileType(wo.getId(), FileStorage.FileType.PDF)
             .stream().map(this::toFileDTO).collect(Collectors.toList());
         List<FileDTO> packingFiles = fileStorageRepository
-            .findByWorkOrderIdAndFileTypeOrderByVersionDesc(wo.getId(), FileStorage.FileType.PACKING)
+            .findActiveByWorkOrderIdAndFileType(wo.getId(), FileStorage.FileType.PACKING)
             .stream().map(this::toFileDTO).collect(Collectors.toList());
         List<ActivityLogDTO> logs = activityLogRepository
             .findByWorkOrderIdOrderByTimestampDesc(wo.getId())
@@ -500,5 +500,41 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         return ActivityLogDTO.builder().id(l.getId()).username(l.getUsername()).fullName(l.getFullName())
             .action(l.getAction()).actionType(l.getActionType().name()).timestamp(l.getTimestamp())
             .formattedTimestamp(l.getTimestamp().format(FMT) + " — by " + l.getFullName()).build();
+    }
+
+    @Override @Transactional(readOnly = true)
+    public List<WorkOrderSummaryDTO> getReadyForInvoice() {
+        return workOrderRepository.findAllByOrderByCreatedAtDesc()
+            .stream()
+            .filter(wo -> wo.getStockStatus() == WorkOrder.StepStatus.DONE
+                && wo.getPackagingStatus() == WorkOrder.StepStatus.DONE
+                && wo.getInvoiceStatus() == WorkOrder.StepStatus.PENDING)
+            .map(this::toSummaryDTO)
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public void deleteInvoicePdf(Long fileId, String username) {
+        FileStorage fs = fileStorageRepository.findById(fileId)
+            .orElseThrow(() -> new ResourceNotFoundException("File not found: " + fileId));
+
+        if (fs.getFileType() != FileStorage.FileType.PDF) {
+            throw new BadRequestException("Only PDF files can be deleted via this endpoint");
+        }
+
+        try {
+            Path filePath = Paths.get(fs.getFilePath());
+            if (Files.exists(filePath)) {
+                Files.delete(filePath);
+            }
+            String originalFileName = fs.getOriginalFileName();
+            fileStorageRepository.delete(fs);
+
+            logActivity(fs.getWorkOrder(), username, getUser(username).getFullName(),
+                "Invoice PDF deleted: " + originalFileName,
+                ActivityLog.ActionType.INVOICE_UPDATED);
+        } catch (IOException e) {
+            throw new BadRequestException("Failed to delete file: " + e.getMessage());
+        }
     }
 }

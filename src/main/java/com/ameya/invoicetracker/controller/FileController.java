@@ -1,12 +1,17 @@
 package com.ameya.invoicetracker.controller;
 
+import com.ameya.invoicetracker.dto.ApiResponse;
 import com.ameya.invoicetracker.entity.FileStorage;
 import com.ameya.invoicetracker.exception.ResourceNotFoundException;
 import com.ameya.invoicetracker.repository.FileStorageRepository;
+import com.ameya.invoicetracker.service.WorkOrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.MalformedURLException;
@@ -19,6 +24,7 @@ import java.nio.file.Paths;
 public class FileController {
 
     private final FileStorageRepository fileStorageRepository;
+    private final WorkOrderService workOrderService;
 
     @GetMapping("/download/{fileId}")
     public ResponseEntity<Resource> downloadFile(@PathVariable Long fileId) {
@@ -79,5 +85,14 @@ public class FileController {
         } catch (MalformedURLException e) {
             throw new ResourceNotFoundException("Could not read file");
         }
+    }
+
+    @DeleteMapping("/{fileId}")
+    @PreAuthorize("hasRole('INVOICE_CREATOR')")
+    public ResponseEntity<ApiResponse<Void>> deleteInvoicePdf(
+            @PathVariable Long fileId,
+            @AuthenticationPrincipal UserDetails ud) {
+        workOrderService.deleteInvoicePdf(fileId, ud.getUsername());
+        return ResponseEntity.ok(ApiResponse.ok("Invoice PDF deleted", null));
     }
 }

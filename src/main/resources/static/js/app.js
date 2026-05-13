@@ -164,10 +164,12 @@ function setupUserUI() {
 
   const isGM    = u.role === 'GENERAL_MANAGER';
   const isAdmin = u.role === 'ADMIN';
+  const isInvoiceCreator = u.role === 'INVOICE_CREATOR';
 
   // Show/hide nav items by role
   document.querySelectorAll('.nav-only-gm').forEach(el => el.style.display = isGM ? '' : 'none');
   document.querySelectorAll('.nav-only-admin').forEach(el => el.style.display = isAdmin ? '' : 'none');
+  document.querySelectorAll('.nav-only-invoice-creator').forEach(el => el.style.display = isInvoiceCreator ? '' : 'none');
 
   // ADMIN cannot touch dispatches — redirect to user-mgmt as home
   if (isAdmin) {
@@ -300,8 +302,8 @@ function getDashboardStatsList() {
   if (isDashboardFilterActive()) {
     return applyFilters(State.woList, true);
   }
-  if (State.dashboardView === 'ALL') {
-    return State.woList;
+  if (State.dashboardView === 'ALL' || State.dashboardView === 'READY_INVOICE') {
+    return getDashboardBaseList(State.woList);
   }
   return getDashboardBaseList(State.woList).filter(isCurrentMonth);
 }
@@ -316,11 +318,19 @@ function bindDashboardControls() {
     };
   }
 
-  ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn'].forEach(btnId => {
+  ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn', 'dashReadyInvoiceBtn'].forEach(btnId => {
     const btn = id(btnId);
     if (!btn) return;
     btn.onclick = () => {
-      State.dashboardView = btnId === 'dashCompletedBtn' ? 'COMPLETED' : btnId === 'dashAllBtn' ? 'ALL' : 'IN_PROGRESS';
+      if (btnId === 'dashReadyInvoiceBtn') {
+        State.dashboardView = 'READY_INVOICE';
+      } else if (btnId === 'dashCompletedBtn') {
+        State.dashboardView = 'COMPLETED';
+      } else if (btnId === 'dashAllBtn') {
+        State.dashboardView = 'ALL';
+      } else {
+        State.dashboardView = 'IN_PROGRESS';
+      }
       renderDashboard();
     };
   });
@@ -352,6 +362,9 @@ function getDashboardVisibleList() {
 function getDashboardBaseList(list) {
   if (State.dashboardView === 'COMPLETED') return list.filter(w => w.status === 'COMPLETED');
   if (State.dashboardView === 'ALL') return list;
+  if (State.dashboardView === 'READY_INVOICE') return list.filter(w =>
+    w.stockStatus === 'DONE' && w.packagingStatus === 'DONE' && w.invoiceStatus === 'PENDING'
+  );
   return list.filter(w => w.status === 'IN_PROGRESS');
 }
 
@@ -860,16 +873,21 @@ function renderFileSection(title, files) {
         const name = f.originalFileName || '';
         const isExcel = /\.(xlsx?|csv)$/i.test(name);
         const isPdf = /\.pdf$/i.test(name);
+        const isInvoicePdf = title === 'Invoice PDFs' && isPdf;
         const viewBtn = isPdf
           ? `<a href="${f.downloadUrl.replace('/download/','/view/')}?token=${State.token}" target="_blank" class="btn btn-outline btn-xs">👁 View</a>`
           : isExcel
           ? `<button class="btn btn-outline btn-xs" onclick="viewExcel(${f.id},'${esc(name)}')">👁 View</button>`
+          : '';
+        const deleteBtn = (isInvoicePdf && State.user?.role === 'INVOICE_CREATOR')
+          ? `<button class="btn btn-danger btn-xs" onclick="deleteInvoicePdf(${f.id},'${esc(name)}')">🗑 Delete</button>`
           : '';
         return `<div class="file-item">
           <div><div class="file-name">${esc(name)}</div><div class="file-meta">v${f.version} · ${f.uploadedBy||''}</div></div>
           <div style="display:flex;gap:4px;flex-wrap:wrap">
             ${viewBtn}
             <a href="${f.downloadUrl}?token=${State.token}" class="btn btn-outline btn-xs">↓ Download</a>
+            ${deleteBtn}
           </div>
         </div>`;
       }).join('')}
@@ -1774,6 +1792,18 @@ function showToast(msg, type='info') {
 
 // ── EXCEL VIEWER ────────────────────────────────────────────────────
 let _excelWorkbook = null;
+
+async function deleteInvoicePdf(fileId, fileName) {
+  if (!confirm(`Delete invoice PDF "${fileName}"? This action cannot be undone.`)) return;
+  try {
+    const res = await api(`/api/files/${fileId}`, 'DELETE', null);
+    toast(res.message || 'Invoice PDF deleted successfully', 'success');
+    const currentWoId = State.currentWo?.id;
+    if (currentWoId) openWoDetail(currentWoId);
+  } catch (ex) {
+    toast(ex.message || 'Failed to delete invoice PDF', 'error');
+  }
+}
 
 async function viewExcel(fileId, fileName) {
   id('excelViewerModal').style.display = 'flex';

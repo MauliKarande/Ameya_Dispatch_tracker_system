@@ -19,6 +19,9 @@ public interface FileStorageRepository extends JpaRepository<FileStorage, Long> 
     @Query("SELECT f FROM FileStorage f WHERE f.workOrder.id = :woId AND f.fileType = :type AND f.deleted = false ORDER BY f.version DESC")
     List<FileStorage> findActiveByWorkOrderIdAndFileType(@Param("woId") Long woId, @Param("type") FileStorage.FileType type);
 
+    @Query("SELECT f FROM FileStorage f WHERE f.workOrder.id = :woId AND f.fileType = :type AND f.deleted = false ORDER BY f.version DESC LIMIT 1")
+    Optional<FileStorage> findTopActiveByWorkOrderIdAndFileType(@Param("woId") Long woId, @Param("type") FileStorage.FileType type);
+
     @Query("SELECT f FROM FileStorage f WHERE f.workOrder.status = 'COMPLETED' AND f.workOrder.updatedAt < :cutoff AND f.deleted = false")
     List<FileStorage> findFilesForCleanup(@Param("cutoff") LocalDateTime cutoff);
 }

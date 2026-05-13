@@ -25,7 +25,14 @@ public class WorkOrderController {
             @RequestParam(required = false) String customer,
             @RequestParam(required = false) Integer month,
             @RequestParam(required = false) Integer year,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String filter) {
+
+        if ("ready-for-invoice".equals(filter)) {
+            List<WorkOrderSummaryDTO> result = workOrderService.getReadyForInvoice();
+            return ResponseEntity.ok(ApiResponse.ok(result));
+        }
+
         boolean hasFilter = (customer != null && !customer.isBlank()) || month != null
             || year != null || (status != null && !status.isBlank());
         List<WorkOrderSummaryDTO> result = hasFilter
