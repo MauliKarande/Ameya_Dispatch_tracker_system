@@ -106,6 +106,7 @@
         <div class="top-bar-title" id="topBarTitle">Dashboard</div>
       </div>
       <div class="top-bar-right">
+        <button class="btn btn-outline btn-sm" id="refreshPageBtn" title="Refresh current page">⟳</button>
         <button class="notif-btn" id="notifBtn" title="Notifications">
           🔔 <span class="notif-badge" id="notifBadge" style="display:none">0</span>
         </button>
@@ -124,6 +125,13 @@
             <div class="notif-empty">No notifications yet</div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div id="refreshOverlay" class="refresh-overlay" aria-hidden="true">
+      <div class="refresh-panel">
+        <span class="refresh-spinner" aria-hidden="true">⟳</span>
+        <span class="refresh-text">Refreshing…</span>
       </div>
     </div>
 

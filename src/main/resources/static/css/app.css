@@ -97,6 +97,51 @@ body {
 /* ── APP SHELL ─────────────────────────────────────────────────── */
 .app-shell { display:flex; height:100vh; overflow:hidden; }
 
+.refresh-overlay {
+  position:fixed;
+  inset:0;
+  background:rgba(255,255,255,0.55);
+  backdrop-filter:blur(6px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .25s ease;
+  z-index:1100;
+}
+.refresh-overlay.active {
+  opacity:1;
+  pointer-events:auto;
+}
+.refresh-panel {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:14px 18px;
+  border-radius:14px;
+  background:rgba(17,24,39,.88);
+  color:#fff;
+  box-shadow:0 22px 60px rgba(0,0,0,.25);
+  font-weight:600;
+  font-size:.95rem;
+}
+.refresh-spinner {
+  display:inline-flex;
+  width:28px;
+  height:28px;
+  border-radius:50%;
+  align-items:center;
+  justify-content:center;
+  background:rgba(255,255,255,.12);
+  color:#fff;
+  animation:refreshSpin 1s linear infinite;
+}
+@keyframes refreshSpin {
+  from { transform:rotate(0deg); }
+  to { transform:rotate(360deg); }
+}
+
 /* ── SIDEBAR ───────────────────────────────────────────────────── */
 .sidebar {
   width:var(--sidebar-width);
@@ -560,6 +605,12 @@ body {
 }
 
 /* ── DETAIL PAGE ─────────────────────────────────────────────────*/
+#woDetailContent {
+  flex:1; overflow:auto; min-height:0;
+  display:flex; flex-direction:column; gap:16px;
+  padding-bottom:12px;
+}
+
 .detail-grid {
   display:grid; grid-template-columns:1fr 1fr;
   gap:16px; margin-bottom:20px;
