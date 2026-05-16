@@ -147,7 +147,7 @@
             <button class="btn btn-outline btn-sm active" id="dashInProgressBtn">In Progress</button>
             <button class="btn btn-outline btn-sm" id="dashCompletedBtn">Completed</button>
             <button class="btn btn-outline btn-sm" id="dashAllBtn">All</button>
-            <button class="btn btn-outline btn-sm nav-only-invoice-creator" id="dashReadyInvoiceBtn" style="display:none">Ready for Invoice</button>
+            <button class="btn btn-outline btn-sm" id="dashReadyInvoiceBtn">Ready for Invoice</button>
           </div>
           <button class="btn btn-outline btn-sm" id="toggleFilterBarBtn">Search / Filter</button>
           <button class="btn btn-primary nav-only-gm" data-page="create-wo">＋ New Dispatch</button>
@@ -190,7 +190,15 @@
       </div>
       <div class="table-wrap">
         <div class="table-card">
-          <div id="woTableLoading" class="loading-state">Loading dispatch lists…</div>
+          <div id="woTableLoading" class="loading-state" style="padding:0;">
+            <div style="padding: 16px;">
+              <div class="skeleton skeleton-row" style="margin-bottom:12px; height: 32px; border-radius: 4px;"></div>
+              <div class="skeleton skeleton-row"></div>
+              <div class="skeleton skeleton-row"></div>
+              <div class="skeleton skeleton-row"></div>
+              <div class="skeleton skeleton-row"></div>
+            </div>
+          </div>
           <div id="woTableEmpty" class="empty-state" style="display:none">
             <div class="empty-icon">📋</div><p>No dispatch lists found</p>
           </div>

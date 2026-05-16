@@ -207,6 +207,18 @@ function setupUserUI() {
   }
 
   id('logoutBtn')?.addEventListener('click', logout);
+  
+  id('refreshPageBtn')?.addEventListener('click', async () => {
+    id('refreshOverlay')?.classList.add('active');
+    try {
+      await syncWorkOrders();
+      if (State.page === 'dashboard') renderDashboard();
+      if (State.page === 'all-wo') await loadAllWo();
+      if (State.page === 'detail' && State.currentWo) await openWoDetail(State.currentWo.id);
+    } finally {
+      setTimeout(() => id('refreshOverlay')?.classList.remove('active'), 300);
+    }
+  });
 }
 
 function roleLabel(role) {
@@ -673,13 +685,25 @@ async function submitCreateWo() {
 async function openWoDetail(id_) {
   navigateTo('detail');
   localStorage.setItem('lastWoId', id_);
-  id('woDetailContent').innerHTML = '<div class="loading-state">Loading…</div>';
+  id('woDetailContent').innerHTML = '<div class="loading-state">Loading dispatch details...</div>';
   try {
     const res = await api(`/api/workorders/${id_}`);
+    if (!res || !res.data) throw new Error("Empty response from server");
     State.currentWo = res.data;
-    renderWoDetail(res.data);
+    try {
+      renderWoDetail(res.data);
+    } catch (renderError) {
+      console.error("Render Error:", renderError);
+      throw new Error("Failed to render dispatch details due to unexpected data format.");
+    }
   } catch(e) {
-    id('woDetailContent').innerHTML = `<div class="alert alert-error">Failed to load: ${e.message}</div>`;
+    console.error("Error opening dispatch detail:", e);
+    id('woDetailContent').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon" style="color:var(--danger)">⚠</div>
+        <p style="margin-bottom: 16px;">Failed to load dispatch details: ${esc(e.message)}</p>
+        <button class="btn btn-primary" onclick="openWoDetail(${id_})">⟳ Retry Loading</button>
+      </div>`;
   }
 }
 

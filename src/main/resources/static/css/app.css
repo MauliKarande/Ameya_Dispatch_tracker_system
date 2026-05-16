@@ -195,9 +195,32 @@ body {
   border-radius:0; transition:background .15s, color .15s;
   white-space:nowrap; overflow:hidden;
 }
-.nav-item:hover { background:var(--sidebar-hover); }
+background:var(--sidebar-hover); }
 .nav-item.active { background:var(--sidebar-active); color:#fff; }
 .nav-icon { font-size:1rem; flex-shrink:0; width:20px; text-align:center; }
+
+/* ── SKELETON LOADING ──────────────────────────────────────────── */
+@keyframes shimmer {
+0% { background-position: -1000px 0; }
+100% { background-position: 1000px 0; }
+}
+.skeleton {
+background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+background-size: 1000px 100%;
+animation: shimmer 2s infinite linear;
+border-radius: var(--radius);
+color: transparent !important;
+pointer-events: none;
+min-height: 20px;
+}
+.skeleton-row {
+height: 48px;
+margin-bottom: 8px;
+}
+.skeleton-card {
+height: 100px;
+}
+
 .sidebar.collapsed .nav-item { justify-content:center; padding:13px 0; }
 .sidebar.collapsed .nav-icon { width:auto; }
 
@@ -724,12 +747,37 @@ body {
     position:fixed; left:0; top:0; bottom:0; z-index:300;
     transform:translateX(-100%); transition:transform var(--transition);
   }
-  .sidebar.mobile-open { transform:translateX(0); }
+  .sidebar.mobile-open { transform:translateX(0); box-shadow: var(--shadow-lg); }
   .sidebar.collapsed { transform:translateX(-100%); }
-  .top-menu-btn { display:block; }
+  .top-menu-btn { display:block; padding: 10px; }
   .stats-row { grid-template-columns:1fr 1fr; }
   .page { padding:14px; }
+  
+  /* Touch target improvements */
+  .btn { padding: 12px 20px; font-size: .9rem; }
+  .btn-sm, .btn-xs { padding: 8px 14px; font-size: .85rem; }
+  .nav-item { padding: 14px 20px; }
+  input[type="text"], input[type="password"], input[type="date"], select, .form-input, .filter-input, .filter-select {
+    padding: 12px 14px;
+    font-size: 16px; /* Prevents iOS zoom */
+  }
+  
+  /* Make filter bar more stacked */
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-bar > * { width: 100%; }
 }
 @media (max-width:480px) {
   .stats-row { grid-template-columns:1fr; }
+  
+  /* Convert detail steps to block on very small screens */
+  .step-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .step-actions { width: 100%; justify-content: flex-start; }
+  
+  .dashboard-view-buttons {
+    flex-direction: column; width: 100%;
+  }
+  .dashboard-view-buttons .btn { width: 100%; text-align: center; justify-content: center; }
 }
