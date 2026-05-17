@@ -576,13 +576,16 @@ function renderWoTable(list) {
   tbody.innerHTML = list.map(w => woRow(w)).join('');
   cardsEl.innerHTML = list.map(w => woCard(w)).join('');
 
-  const bindDetail = (container) => {
-    container.querySelectorAll('[data-detail]').forEach(el => {
-      el.addEventListener('click', () => openWoDetail(parseInt(el.dataset.detail)));
+  // Delegate: click anywhere on a row/card opens detail; download <a> links still work
+  const bindDetail = (container, rowSelector) => {
+    container.addEventListener('click', (e) => {
+      if (e.target.closest('a[href]')) return; // let download links pass through
+      const row = e.target.closest(rowSelector);
+      if (row?.dataset.detail) openWoDetail(parseInt(row.dataset.detail));
     });
   };
-  bindDetail(tbody);
-  bindDetail(cardsEl);
+  bindDetail(tbody, 'tr[data-detail]');
+  bindDetail(cardsEl, '.wo-card[data-detail]');
 }
 
 function woCard(w) {
@@ -605,7 +608,7 @@ function woCard(w) {
   const pdfBtn = w.latestPdfFileId
     ? `<a href="/api/files/view/${w.latestPdfFileId}?token=${State.token}" target="_blank" class="btn btn-outline btn-xs">↓ PDF</a>` : '';
 
-  return `<div class="wo-card ${statusClass}">
+  return `<div class="wo-card ${statusClass}" data-detail="${w.id}">
     <div class="wo-card-top">
       <div>
         <div class="wo-card-num">${esc(w.woNumber)}${w.revised ? ' <span style="color:var(--amber);font-size:.75rem">↻ v'+w.version+'</span>' : ''}</div>
@@ -615,8 +618,8 @@ function woCard(w) {
       <div>${statusBadgeHtml(w.status)}</div>
     </div>
     <div class="wo-card-steps">${stepsHtml}</div>
-    <div class="wo-card-actions">
-      <button class="btn btn-outline btn-sm" data-detail="${w.id}">👁 View</button>
+    <div class="wo-card-actions" onclick="event.stopPropagation()">
+      <button class="btn btn-outline btn-sm" onclick="openWoDetail(${w.id})">👁 View</button>
       ${xlsBtn}${pdfBtn}
     </div>
   </div>`;
@@ -631,8 +634,8 @@ function woRow(w) {
   const flags = `${w.hasNote ? '📝' : ''}${w.hasInvoiceIssue ? ' ⚠' : ''}`;
   const versionBadge = w.revised ? `<span class="badge badge-revised" style="font-size:.68rem">v${w.version}</span>` : `v${w.version}`;
 
-  return `<tr>
-    <td><a class="wo-number-link" data-detail="${w.id}">${w.woNumber}</a>${w.revised?`<br><span style="font-size:.7rem;color:var(--amber)">↻ Revised</span>`:''}</td>
+  return `<tr data-detail="${w.id}">
+    <td><span class="wo-number-link">${w.woNumber}</span>${w.revised?`<br><span style="font-size:.7rem;color:var(--amber)">↻ Revised</span>`:''}</td>
     <td><span style="font-size:.82rem">${esc(w.customerName)}</span><br><span style="font-size:.7rem;color:var(--text3)">${formatDate(w.woDate)}</span></td>
     <td><span style="font-size:.8rem">${esc(w.shipmentMode||'—')}</span></td>
     <td><span class="badge badge-ip" style="font-size:.72rem">${esc(w.invoiceType||'Commercial')}</span></td>
@@ -644,8 +647,8 @@ function woRow(w) {
     <td>${statusBadge}</td>
     <td>${versionBadge}</td>
     <td>${flags||'—'}</td>
-    <td class="col-actions">
-      <button class="btn btn-outline btn-xs" data-detail="${w.id}">👁 View</button>
+    <td class="col-actions" onclick="event.stopPropagation()">
+      <button class="btn btn-outline btn-xs" onclick="openWoDetail(${w.id})">👁 View</button>
       ${xlsBtn}${pdfBtn}
     </td>
   </tr>`;
@@ -690,8 +693,10 @@ async function loadAllWo() {
           <tbody>${list.map(w => woRow(w)).join('')}</tbody>
         </table>
       </div></div>`;
-    id('allWoContent').querySelectorAll('[data-detail]').forEach(el => {
-      el.addEventListener('click', () => openWoDetail(parseInt(el.dataset.detail)));
+    id('allWoContent').addEventListener('click', (e) => {
+      if (e.target.closest('a[href]')) return;
+      const row = e.target.closest('tr[data-detail], .wo-card[data-detail]');
+      if (row?.dataset.detail) openWoDetail(parseInt(row.dataset.detail));
     });
   } catch(e) { id('allWoContent').innerHTML = '<div class="alert alert-error">Failed to load</div>'; }
 }
