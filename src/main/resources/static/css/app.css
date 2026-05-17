@@ -432,7 +432,13 @@ height: 100px;
   padding:7px 10px; border-bottom:1px solid var(--border);
   vertical-align:middle;
 }
-.wo-table tr:hover td { background:var(--surface2); }
+.wo-table tbody tr { transition:background .12s; cursor:pointer; }
+.wo-table tbody tr:hover td {
+  background:color-mix(in srgb, var(--blue-600) 6%, var(--surface));
+}
+.wo-table tbody tr:hover td:first-child {
+  box-shadow:inset 3px 0 0 var(--blue-600);
+}
 .wo-table tr:last-child td { border-bottom:none; }
 .col-actions { text-align:right; min-width:130px; }
 

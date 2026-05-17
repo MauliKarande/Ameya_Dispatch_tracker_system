@@ -2106,17 +2106,27 @@ async function loadUserManagement() {
 function openAddUserModal() {
   id('modalTitle').textContent = '＋ Add User';
   id('modalBody').innerHTML = `
-    <div class="form-group"><label class="form-label">Full Name *</label>
-      <input class="form-input" id="muFullName" placeholder="e.g. Mauli Karande"/></div>
-    <div class="form-group"><label class="form-label">Username *</label>
-      <input class="form-input" id="muUsername" placeholder="e.g. mauli.karande"/></div>
-    <div class="form-group"><label class="form-label">Password *</label>
-      <input class="form-input" id="muPassword" type="password" placeholder="Min 6 characters"/></div>
-    <div class="form-group"><label class="form-label">Role *</label>
-      <select class="form-input" id="muRole">
-        ${ALL_ROLES.map(r => `<option value="${r}">${roleLabel(r)}</option>`).join('')}
-      </select></div>
-    <div id="muAlert" class="alert" style="display:none"></div>`;
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="field-group">
+        <label>Full Name <span class="req">*</span></label>
+        <input type="text" id="muFullName" placeholder="e.g. Mauli Karande" autocomplete="off"/>
+      </div>
+      <div class="field-group">
+        <label>Username <span class="req">*</span></label>
+        <input type="text" id="muUsername" placeholder="e.g. mauli.karande" autocomplete="off"/>
+      </div>
+      <div class="field-group">
+        <label>Password <span class="req">*</span></label>
+        <input type="password" id="muPassword" placeholder="Min 6 characters" autocomplete="new-password"/>
+      </div>
+      <div class="field-group">
+        <label>Role <span class="req">*</span></label>
+        <select id="muRole">
+          ${ALL_ROLES.map(r => `<option value="${r}">${roleLabel(r)}</option>`).join('')}
+        </select>
+      </div>
+      <div id="muAlert" class="alert" style="display:none"></div>
+    </div>`;
   id('modalFooter').innerHTML = `
     <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
     <button class="btn btn-primary" onclick="submitAddUser()">Create User</button>`;
@@ -2155,17 +2165,27 @@ async function openEditUserModal(userId) {
     if (!u) throw new Error('User not found');
 
     id('modalBody').innerHTML = `
-      <div class="form-group"><label class="form-label">Full Name (Display Name)</label>
-        <input class="form-input" id="muFullName" value="${esc(u.fullName)}" placeholder="Display name"/></div>
-      <div class="form-group"><label class="form-label">Username</label>
-        <input class="form-input" id="muUsername" value="${esc(u.username)}" placeholder="Login username"/></div>
-      <div class="form-group"><label class="form-label">New Password <span style="color:var(--text3);font-size:.78rem">(leave blank to keep current)</span></label>
-        <input class="form-input" id="muPassword" type="password" placeholder="Leave blank to keep existing password"/></div>
-      <div class="form-group"><label class="form-label">Role</label>
-        <select class="form-input" id="muRole">
-          ${ALL_ROLES.map(r => `<option value="${r}"${r===u.role?' selected':''}>${roleLabel(r)}</option>`).join('')}
-        </select></div>
-      <div id="muAlert" class="alert" style="display:none"></div>`;
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="field-group">
+          <label>Full Name</label>
+          <input type="text" id="muFullName" value="${esc(u.fullName)}" placeholder="Display name" autocomplete="off"/>
+        </div>
+        <div class="field-group">
+          <label>Username</label>
+          <input type="text" id="muUsername" value="${esc(u.username)}" placeholder="Login username" autocomplete="off"/>
+        </div>
+        <div class="field-group">
+          <label>New Password <span style="color:var(--text3);font-size:.78rem;font-weight:400;text-transform:none;letter-spacing:0">(leave blank to keep current)</span></label>
+          <input type="password" id="muPassword" placeholder="Leave blank to keep existing" autocomplete="new-password"/>
+        </div>
+        <div class="field-group">
+          <label>Role</label>
+          <select id="muRole">
+            ${ALL_ROLES.map(r => `<option value="${r}"${r===u.role?' selected':''}>${roleLabel(r)}</option>`).join('')}
+          </select>
+        </div>
+        <div id="muAlert" class="alert" style="display:none"></div>
+      </div>`;
     id('modalFooter').innerHTML = `
       <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitEditUser(${userId})">Save Changes</button>`;
