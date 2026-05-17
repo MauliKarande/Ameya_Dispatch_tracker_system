@@ -439,6 +439,12 @@ height: 100px;
 .wo-table tbody tr:hover td:first-child {
   box-shadow:inset 3px 0 0 var(--blue-600);
 }
+.wo-table tbody tr.row-focused td {
+  background:color-mix(in srgb, var(--blue-600) 13%, var(--surface));
+}
+.wo-table tbody tr.row-focused td:first-child {
+  box-shadow:inset 3px 0 0 var(--blue-600);
+}
 .wo-table tr:last-child td { border-bottom:none; }
 .col-actions { text-align:right; min-width:130px; }
 

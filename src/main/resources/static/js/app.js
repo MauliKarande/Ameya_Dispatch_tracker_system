@@ -301,6 +301,7 @@ function bindNav() {
 }
 
 function navigateTo(page) {
+  _focusedRowIndex = -1; // reset keyboard focus on every page change
   State.page = page;
   localStorage.setItem('lastPage', page);
   if (page !== 'detail') {
@@ -588,6 +589,15 @@ function renderWoTable(list) {
   };
   bindDetail(tbody, 'tr[data-detail]');
   bindDetail(cardsEl, '.wo-card[data-detail]');
+
+  // Sync keyboard focus index when mouse hovers a row
+  tbody.addEventListener('mouseover', (e) => {
+    const row = e.target.closest('tr[data-detail]');
+    if (!row) return;
+    const rows = [...tbody.querySelectorAll('tr[data-detail]')];
+    const idx = rows.indexOf(row);
+    if (idx !== _focusedRowIndex) setRowFocus(rows, idx);
+  });
 }
 
 function woCard(w) {
@@ -674,33 +684,44 @@ function statusBadgeHtml(status) {
 
 // ── ALL WO PAGE ────────────────────────────────────────────────────
 async function loadAllWo() {
-  id('allWoContent').innerHTML = '<div class="loading-state">Loading…</div>';
+  const container = id('allWoContent');
+  // Wire click delegation once via onclick (avoids stacking listeners on re-render)
+  container.onclick = (e) => {
+    if (e.target.closest('a[href]')) return;
+    const row = e.target.closest('tr[data-detail], .wo-card[data-detail]');
+    if (row?.dataset.detail) openWoDetail(parseInt(row.dataset.detail));
+  };
+  if (State.woList.length) {
+    renderAllWoContent(State.woList); // use cache — no extra network call
+    return;
+  }
+  container.innerHTML = '<div class="loading-state">Loading…</div>';
   try {
     const res = await api('/api/workorders');
-    const list = res.data || [];
-    if (!list.length) {
-      id('allWoContent').innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>No dispatch lists yet</p></div>';
-      return;
-    }
-    id('allWoContent').innerHTML = `
-      <div class="wo-cards" id="allWoCards">${list.map(w => woCard(w)).join('')}</div>
-      <div class="table-card"><div class="table-wrap">
-        <table class="wo-table">
-          <thead><tr>
-            <th>Dispatch No.</th><th>Customer</th><th>Shipment</th><th>Invoice Type</th>
-            <th>Stock</th><th>Box Details</th><th>Invoice</th>
-            <th>Ready For Dispatch</th><th>Collection</th>
-            <th>Status</th><th>Ver.</th><th>Actions</th>
-          </tr></thead>
-          <tbody>${list.map(w => woRow(w)).join('')}</tbody>
-        </table>
-      </div></div>`;
-    id('allWoContent').addEventListener('click', (e) => {
-      if (e.target.closest('a[href]')) return;
-      const row = e.target.closest('tr[data-detail], .wo-card[data-detail]');
-      if (row?.dataset.detail) openWoDetail(parseInt(row.dataset.detail));
-    });
-  } catch(e) { id('allWoContent').innerHTML = '<div class="alert alert-error">Failed to load</div>'; }
+    State.woList = res.data || [];
+    renderAllWoContent(State.woList);
+  } catch(e) { container.innerHTML = '<div class="alert alert-error">Failed to load</div>'; }
+}
+
+function renderAllWoContent(list) {
+  const container = id('allWoContent');
+  if (!list.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>No dispatch lists yet</p></div>';
+    return;
+  }
+  container.innerHTML = `
+    <div class="wo-cards" id="allWoCards">${list.map(w => woCard(w)).join('')}</div>
+    <div class="table-card"><div class="table-wrap">
+      <table class="wo-table">
+        <thead><tr>
+          <th>Dispatch No.</th><th>Customer</th><th>Shipment</th><th>Invoice Type</th>
+          <th>Stock</th><th>Box Details</th><th>Invoice</th>
+          <th>Ready For Dispatch</th><th>Collection</th>
+          <th>Status</th><th>Ver.</th><th>Actions</th>
+        </tr></thead>
+        <tbody>${list.map(w => woRow(w)).join('')}</tbody>
+      </table>
+    </div></div>`;
 }
 
 // ── CREATE FORM ─────────────────────────────────────────────────────
@@ -1650,6 +1671,45 @@ let _notifTab = 'all';
 let _sseSource = null;
 let _sseRetryDelay = 2000;
 
+// ── KEYBOARD ROW NAVIGATION ─────────────────────────────────────────
+let _focusedRowIndex = -1;
+
+function getNavRows() {
+  if (State.page === 'dashboard') return [...(id('woTableBody')?.querySelectorAll('tr[data-detail]') || [])];
+  if (State.page === 'all-wo')   return [...(id('allWoContent')?.querySelectorAll('tbody tr[data-detail]') || [])];
+  return [];
+}
+
+function setRowFocus(rows, idx) {
+  rows.forEach((r, i) => r.classList.toggle('row-focused', i === idx));
+  if (idx >= 0 && rows[idx]) rows[idx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  _focusedRowIndex = idx;
+}
+
+document.addEventListener('keydown', (e) => {
+  // Don't hijack keys when typing in an input, select, or textarea
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  // Don't hijack when a modal is open
+  if (id('modal')?.style.display === 'flex') return;
+
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return;
+  const rows = getNavRows();
+  if (!rows.length) return;
+  e.preventDefault();
+
+  if (e.key === 'ArrowDown') {
+    const next = _focusedRowIndex < 0 ? 0 : Math.min(_focusedRowIndex + 1, rows.length - 1);
+    setRowFocus(rows, next);
+  } else if (e.key === 'ArrowUp') {
+    const prev = _focusedRowIndex < 0 ? rows.length - 1 : Math.max(_focusedRowIndex - 1, 0);
+    setRowFocus(rows, prev);
+  } else if (e.key === 'Enter' && _focusedRowIndex >= 0) {
+    const row = rows[_focusedRowIndex];
+    if (row?.dataset.detail) openWoDetail(parseInt(row.dataset.detail));
+  }
+});
+
 // ── BELL PANEL ──────────────────────────────────────────────────────
 function setupNotifications() {
   try {
@@ -1887,7 +1947,7 @@ function requestNotificationPermission() { /* handled by banner */ }
 function startAutoSync() {
   requestNotificationPermission();
   if (State.syncTimer) clearInterval(State.syncTimer);
-  State.syncTimer = setInterval(syncWorkOrders, 10000); // 10s fallback if SSE misses anything
+  State.syncTimer = setInterval(syncWorkOrders, 60000); // 60s fallback; SSE handles real-time
   syncWorkOrders();
 }
 
@@ -1899,7 +1959,7 @@ async function syncWorkOrders() {
     if (JSON.stringify(latest) !== JSON.stringify(State.woList)) {
       State.woList = latest;
       if (State.page === 'dashboard') renderDashboard();
-      if (State.page === 'all-wo') loadAllWo();
+      if (State.page === 'all-wo') renderAllWoContent(latest); // re-render from fresh data, no extra fetch
     }
   } catch (err) {
     console.warn('Auto-sync failed', err);
@@ -2017,11 +2077,11 @@ async function deleteInvoicePdf(fileId, fileName) {
   if (!confirm(`Delete invoice PDF "${fileName}"? This action cannot be undone.`)) return;
   try {
     const res = await api(`/api/files/${fileId}`, 'DELETE', null);
-    toast(res.message || 'Invoice PDF deleted successfully', 'success');
+    showToast(res.message || 'Invoice PDF deleted successfully', 'success');
     const currentWoId = State.currentWo?.id;
     if (currentWoId) openWoDetail(currentWoId);
   } catch (ex) {
-    toast(ex.message || 'Failed to delete invoice PDF', 'error');
+    showToast(ex.message || 'Failed to delete invoice PDF', 'error');
   }
 }
 
