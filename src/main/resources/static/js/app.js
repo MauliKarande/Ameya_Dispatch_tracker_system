@@ -554,6 +554,8 @@ function clearFilters() {
 }
 
 function renderWoTable(list) {
+  const loadingEl = id('woTableLoading');
+  if (loadingEl) loadingEl.style.display = 'none'; // always hide skeleton when rendering
   const tbody = id('woTableBody');
   // Ensure the cards container exists next to the table-card
   let cardsEl = id('woCardsContainer');
