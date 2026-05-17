@@ -356,6 +356,17 @@ async function loadLookupData() {
         ftSel.appendChild(o);
       });
     }
+
+    // Populate year filter dynamically: 2024 up to next year
+    const yearSel = id('filterYear');
+    if (yearSel) {
+      const currentYear = new Date().getFullYear();
+      for (let y = 2024; y <= currentYear + 1; y++) {
+        const o = document.createElement('option');
+        o.value = y; o.textContent = y;
+        yearSel.appendChild(o);
+      }
+    }
   } catch (e) { console.warn('Lookup load failed', e); }
 }
 
@@ -528,17 +539,71 @@ function clearFilters() {
 
 function renderWoTable(list) {
   const tbody = id('woTableBody');
+  // Ensure the cards container exists next to the table-card
+  let cardsEl = id('woCardsContainer');
+  if (!cardsEl) {
+    cardsEl = document.createElement('div');
+    cardsEl.id = 'woCardsContainer';
+    cardsEl.className = 'wo-cards';
+    const tableCard = id('woTable').closest('.table-card');
+    tableCard.parentNode.insertBefore(cardsEl, tableCard);
+  }
+
   if (!list.length) {
     id('woTable').style.display = 'none';
     id('woTableEmpty').style.display = 'block';
+    cardsEl.innerHTML = '';
     return;
   }
   id('woTable').style.display = 'table';
   id('woTableEmpty').style.display = 'none';
   tbody.innerHTML = list.map(w => woRow(w)).join('');
-  tbody.querySelectorAll('[data-detail]').forEach(el => {
-    el.addEventListener('click', () => openWoDetail(parseInt(el.dataset.detail)));
-  });
+  cardsEl.innerHTML = list.map(w => woCard(w)).join('');
+
+  const bindDetail = (container) => {
+    container.querySelectorAll('[data-detail]').forEach(el => {
+      el.addEventListener('click', () => openWoDetail(parseInt(el.dataset.detail)));
+    });
+  };
+  bindDetail(tbody);
+  bindDetail(cardsEl);
+}
+
+function woCard(w) {
+  const statusClass = w.status === 'COMPLETED' ? 'status-completed' : w.status === 'REVISED' ? 'status-revised' : '';
+  const steps = [
+    { label: 'Stock',    status: w.stockStatus },
+    { label: 'Packing',  status: w.packagingStatus },
+    { label: 'Invoice',  status: w.invoiceStatus },
+    { label: 'Ready',    status: w.readyForDispatchStatus || 'PENDING' },
+    { label: 'Collect',  status: w.collectionStatus || 'PENDING' },
+  ];
+  const stepsHtml = steps.map(s => `
+    <div class="wo-card-step">
+      <span class="badge ${s.status === 'DONE' ? 'badge-done' : 'badge-pending'}" style="font-size:.65rem;padding:2px 5px">${s.status === 'DONE' ? '✓' : '…'}</span>
+      <span class="wo-card-step-label">${s.label}</span>
+    </div>`).join('');
+  const flags = `${w.hasNote ? ' 📝' : ''}${w.hasInvoiceIssue ? ' ⚠' : ''}`;
+  const xlsBtn = w.latestExcelFileId
+    ? `<a href="/api/files/download/${w.latestExcelFileId}?token=${State.token}" class="btn btn-outline btn-xs">↓ XLS</a>` : '';
+  const pdfBtn = w.latestPdfFileId
+    ? `<a href="/api/files/view/${w.latestPdfFileId}?token=${State.token}" target="_blank" class="btn btn-outline btn-xs">↓ PDF</a>` : '';
+
+  return `<div class="wo-card ${statusClass}">
+    <div class="wo-card-top">
+      <div>
+        <div class="wo-card-num">${esc(w.woNumber)}${w.revised ? ' <span style="color:var(--amber);font-size:.75rem">↻ v'+w.version+'</span>' : ''}</div>
+        <div class="wo-card-customer">${esc(w.customerName)}${flags}</div>
+        <div class="wo-card-date">${formatDate(w.woDate)} &nbsp;·&nbsp; ${esc(w.shipmentMode||'—')} &nbsp;·&nbsp; ${esc(w.invoiceType||'Commercial')}</div>
+      </div>
+      <div>${statusBadgeHtml(w.status)}</div>
+    </div>
+    <div class="wo-card-steps">${stepsHtml}</div>
+    <div class="wo-card-actions">
+      <button class="btn btn-outline btn-sm" data-detail="${w.id}">👁 View</button>
+      ${xlsBtn}${pdfBtn}
+    </div>
+  </div>`;
 }
 
 function woRow(w) {
@@ -597,6 +662,7 @@ async function loadAllWo() {
       return;
     }
     id('allWoContent').innerHTML = `
+      <div class="wo-cards" id="allWoCards">${list.map(w => woCard(w)).join('')}</div>
       <div class="table-card"><div class="table-wrap">
         <table class="wo-table">
           <thead><tr>
