@@ -430,6 +430,22 @@ function getDashboardStatsList() {
 }
 
 function bindDashboardControls() {
+  // Stats show/hide toggle (preference persisted in localStorage)
+  const statsToggleBtn = id('toggleStatsBtn');
+  const statsRow = document.querySelector('#pageDashboard .stats-row');
+  if (statsToggleBtn && statsRow) {
+    const applyStatsVisibility = (hidden) => {
+      statsRow.style.display = hidden ? 'none' : '';
+      statsToggleBtn.textContent = hidden ? '▼ Stats' : '▲ Stats';
+    };
+    applyStatsVisibility(localStorage.getItem('statsHidden') === 'true');
+    statsToggleBtn.onclick = () => {
+      const nowHidden = statsRow.style.display !== 'none';
+      localStorage.setItem('statsHidden', nowHidden);
+      applyStatsVisibility(nowHidden);
+    };
+  }
+
   const toggleBtn = id('toggleFilterBarBtn');
   const filterBar = id('dashboardFilterBar');
   if (toggleBtn && filterBar) {
