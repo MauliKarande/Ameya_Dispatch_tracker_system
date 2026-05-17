@@ -40,11 +40,56 @@ document.addEventListener('DOMContentLoaded', () => {
   if (saved && savedUser) {
     State.token = saved;
     State.user  = JSON.parse(savedUser);
-    showApp();
+    validateSessionAndShowApp();
   } else {
     showLoginScreen();
   }
 });
+
+async function validateSessionAndShowApp() {
+  showServerConnecting(true);
+  let attempts = 0;
+  const maxAttempts = 6;
+  while (attempts < maxAttempts) {
+    try {
+      await api('/api/lookup/customers');
+      showServerConnecting(false);
+      showApp();
+      return;
+    } catch (e) {
+      if (e.message.includes('Session expired')) {
+        showServerConnecting(false);
+        return; // logout() already called inside api()
+      }
+      attempts++;
+      if (attempts < maxAttempts) {
+        updateConnectingMessage(`Server restarted — reconnecting… (${attempts}/${maxAttempts})`);
+        await new Promise(r => setTimeout(r, 5000));
+      }
+    }
+  }
+  showServerConnecting(false);
+  logout();
+  id('loginError').textContent = 'Server could not be reached. Please log in again.';
+  id('loginError').style.display = 'block';
+}
+
+function showServerConnecting(show) {
+  let overlay = id('serverConnectingOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'serverConnectingOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#fff;gap:16px;font-family:Inter,sans-serif';
+    overlay.innerHTML = '<div style="width:48px;height:48px;border:4px solid rgba(255,255,255,.2);border-top-color:#2563eb;border-radius:50%;animation:refreshSpin 1s linear infinite"></div><p id="serverConnectingMsg" style="font-size:1rem;font-weight:600">Connecting to server…</p><p style="font-size:.82rem;color:#94a3b8">Please wait while the server starts up</p>';
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display = show ? 'flex' : 'none';
+}
+
+function updateConnectingMessage(msg) {
+  const el = id('serverConnectingMsg');
+  if (el) el.textContent = msg;
+}
 
 // ── THEME ──────────────────────────────────────────────────────────
 function applyTheme() {
@@ -84,7 +129,26 @@ function bindSidebar() {
   const topBtn = id('topMenuBtn');
   if (topBtn) topBtn.addEventListener('click', () => {
     const sidebar = id('sidebar');
-    sidebar.classList.toggle('mobile-open');
+    const isOpen = sidebar.classList.contains('mobile-open');
+    if (isOpen) {
+      sidebar.classList.remove('mobile-open');
+    } else {
+      sidebar.classList.remove('collapsed'); // prevent collapsed from hiding mobile-open
+      sidebar.classList.add('mobile-open');
+    }
+  });
+
+  // Close sidebar on outside click (mobile)
+  document.addEventListener('click', (e) => {
+    if (window.innerWidth > 768) return;
+    const sidebar = id('sidebar');
+    const topMenuBtn = id('topMenuBtn');
+    if (!sidebar || !topMenuBtn) return;
+    if (sidebar.classList.contains('mobile-open') &&
+        !sidebar.contains(e.target) &&
+        !topMenuBtn.contains(e.target)) {
+      sidebar.classList.remove('mobile-open');
+    }
   });
 
   // Mouse edge hover expand
@@ -1814,6 +1878,10 @@ async function api(url, method = 'GET', body = null) {
   if (State.token) opts.headers['Authorization'] = `Bearer ${State.token}`;
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(url, opts);
+  if (res.status === 401) {
+    logout();
+    throw new Error('Session expired. Please log in again.');
+  }
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
   return data;
@@ -1823,6 +1891,10 @@ async function apiFormData(url, formData, method = 'POST') {
   const opts = { method, body: formData };
   if (State.token) opts.headers = { 'Authorization': `Bearer ${State.token}` };
   const res = await fetch(url, opts);
+  if (res.status === 401) {
+    logout();
+    throw new Error('Session expired. Please log in again.');
+  }
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
   return data;

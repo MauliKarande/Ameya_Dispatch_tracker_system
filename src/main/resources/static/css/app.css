@@ -747,8 +747,8 @@ height: 100px;
     position:fixed; left:0; top:0; bottom:0; z-index:300;
     transform:translateX(-100%); transition:transform var(--transition);
   }
-  .sidebar.mobile-open { transform:translateX(0); box-shadow: var(--shadow-lg); }
   .sidebar.collapsed { transform:translateX(-100%); }
+  .sidebar.mobile-open { transform:translateX(0) !important; box-shadow: var(--shadow-lg); }
   .top-menu-btn { display:block; padding: 10px; }
   .stats-row { grid-template-columns:1fr 1fr; }
   .page { padding:14px; }
