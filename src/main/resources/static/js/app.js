@@ -2120,12 +2120,88 @@ async function viewExcel(fileId, fileName) {
 
 function renderExcelSheet(sheetName) {
   const ws = _excelWorkbook.Sheets[sheetName];
-  const html = XLSX.utils.sheet_to_html(ws, { editable: false });
   const container = id('excelViewerTable');
-  container.innerHTML = `<div class="excel-table-wrap">${html}</div>`;
   container.style.display = 'block';
-  // Apply basic table styles
-  container.querySelectorAll('table').forEach(t => t.className = 'excel-sheet-table');
+
+  if (!ws || !ws['!ref']) {
+    container.innerHTML = '<div style="padding:20px;color:var(--text3)">Empty sheet</div>';
+    return;
+  }
+
+  const range    = XLSX.utils.decode_range(ws['!ref']);
+  const colProps = ws['!cols']   || [];
+  const rowProps = ws['!rows']   || [];
+  const merges   = ws['!merges'] || [];
+
+  // Build merge map: "r,c" → {rowspan, colspan}; track covered cells to skip
+  const mergeMap  = {};
+  const skipCell  = new Set();
+  merges.forEach(m => {
+    mergeMap[`${m.s.r},${m.s.c}`] = {
+      rowspan: m.e.r - m.s.r + 1,
+      colspan: m.e.c - m.s.c + 1
+    };
+    for (let r = m.s.r; r <= m.e.r; r++) {
+      for (let c = m.s.c; c <= m.e.c; c++) {
+        if (r !== m.s.r || c !== m.s.c) skipCell.add(`${r},${c}`);
+      }
+    }
+  });
+
+  // Only include visible columns
+  const visCols = [];
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    if (!colProps[c]?.hidden) visCols.push(c);
+  }
+
+  // <colgroup> so column widths are respected
+  const colgroup = visCols.map(c => {
+    const px = colProps[c]?.wpx || Math.round((colProps[c]?.wch || 10) * 7);
+    return `<col style="min-width:${Math.max(px, 40)}px">`;
+  }).join('');
+
+  // Build rows — skip hidden ones
+  let rowsHtml = '';
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    if (rowProps[r]?.hidden) continue;
+
+    let cellsHtml = '';
+    for (const c of visCols) {
+      const key  = `${r},${c}`;
+      if (skipCell.has(key)) continue;
+
+      const addr  = XLSX.utils.encode_cell({ r, c });
+      const cell  = ws[addr];
+      const merge = mergeMap[key];
+      const rs    = merge?.rowspan > 1 ? ` rowspan="${merge.rowspan}"` : '';
+      const cs    = merge?.colspan > 1 ? ` colspan="${merge.colspan}"` : '';
+
+      // cell.w = SheetJS formatted text (dates, numbers, currency all pre-formatted)
+      // Fall back: try XLSX.SSF.format with the cell's format string, then raw value
+      let val = '';
+      if (cell) {
+        if (cell.w !== undefined) {
+          val = cell.w;
+        } else if (cell.t === 'n' && cell.z) {
+          try { val = XLSX.SSF.format(cell.z, cell.v); } catch (_) { val = String(cell.v); }
+        } else if (cell.v !== undefined) {
+          val = String(cell.v);
+        }
+      }
+
+      const align = cell?.t === 'n' ? 'right' : cell?.t === 'b' ? 'center' : 'left';
+      cellsHtml += `<td${rs}${cs} style="text-align:${align}">${esc(val)}</td>`;
+    }
+    rowsHtml += `<tr>${cellsHtml}</tr>`;
+  }
+
+  container.innerHTML = `
+    <div class="excel-table-wrap">
+      <table class="excel-sheet-table">
+        <colgroup>${colgroup}</colgroup>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
 }
 
 function closeExcelViewer() {
