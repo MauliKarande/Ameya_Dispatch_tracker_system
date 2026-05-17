@@ -213,6 +213,7 @@
           </table>
         </div>
       </div>
+      <div id="dashPagination" class="pagination-bar"></div>
     </section>
 
     <!-- CREATE DISPATCH -->
@@ -274,8 +275,23 @@
     <section id="pageAllWo" class="page">
       <div class="page-header">
         <div><h2 class="page-title">All Dispatch Lists</h2><p class="page-sub">Complete list — newest first</p></div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" id="allWoToggleFilterBtn">Search / Filter</button>
+          <button class="btn btn-outline btn-sm" id="allWoExportCsvBtn">&#8595; Export CSV</button>
+        </div>
+      </div>
+      <div class="filter-bar hidden" id="allWoFilterBar">
+        <input class="filter-input" id="allWoFilterQ" placeholder="&#128269;  Search by customer, WO or invoice no…" type="text"/>
+        <select class="filter-select" id="allWoFilterStatus">
+          <option value="">All Statuses</option>
+          <option value="IN_PROGRESS">In Progress</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="REVISED">Revised</option>
+        </select>
+        <button class="btn btn-outline btn-sm" id="allWoFilterClearBtn">&#10005; Clear</button>
       </div>
       <div id="allWoContent"></div>
+      <div id="allWoPagination" class="pagination-bar"></div>
     </section>
 
     <!-- DISPATCH DETAIL -->

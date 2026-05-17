@@ -11,6 +11,7 @@ const State = {
   token: null,
   user:  null,
   page:  'dashboard',
+  prevPage: null,
   woList: [],
   currentWo: null,
   customers: [],
@@ -23,6 +24,12 @@ const State = {
   selectedCustomer: null,
   syncTimer: null,
   lastNotificationTime: 0,
+  userCache: [],
+  allWoFilters: { q: '', status: '' },
+  dashPage: 1,
+  allWoPage: 1,
+  dashDisplayList: [],
+  allWoDisplayList: [],
 };
 
 // ── INIT ───────────────────────────────────────────────────────────
@@ -59,7 +66,7 @@ async function validateSessionAndShowApp() {
     } catch (e) {
       if (e.message.includes('Session expired')) {
         showServerConnecting(false);
-        return; // logout() already called inside api()
+        return; // forceLogout() already called inside api()
       }
       attempts++;
       if (attempts < maxAttempts) {
@@ -69,7 +76,7 @@ async function validateSessionAndShowApp() {
     }
   }
   showServerConnecting(false);
-  logout();
+  forceLogout();
   id('loginError').textContent = 'Server could not be reached. Please log in again.';
   id('loginError').style.display = 'block';
 }
@@ -234,6 +241,11 @@ function showLoginScreen() {
 }
 
 function logout() {
+  if (!confirm('Are you sure you want to sign out?')) return;
+  forceLogout();
+}
+
+function forceLogout() {
   if (State.syncTimer) {
     clearInterval(State.syncTimer);
     State.syncTimer = null;
@@ -301,7 +313,8 @@ function bindNav() {
 }
 
 function navigateTo(page) {
-  _focusedRowIndex = -1; // reset keyboard focus on every page change
+  _focusedRowIndex = -1;
+  State.prevPage = State.page;
   State.page = page;
   localStorage.setItem('lastPage', page);
   if (page !== 'detail') {
@@ -469,6 +482,7 @@ function bindDashboardControls() {
       } else {
         State.dashboardView = 'IN_PROGRESS';
       }
+      State.dashPage = 1;
       renderDashboard();
     };
   });
@@ -519,6 +533,7 @@ function applyFilters(sourceList = State.woList, returnOnly = false) {
     sourceList = State.woList;
     returnOnly = false;
   }
+  if (!returnOnly) State.dashPage = 1;
   const q    = String(id('filterCustomer')?.value || '').toLowerCase();
   const m    = id('filterMonth')?.value;
   const y    = id('filterYear')?.value;
@@ -551,12 +566,14 @@ function applyFilters(sourceList = State.woList, returnOnly = false) {
 function clearFilters() {
   ['filterCustomer','filterMonth','filterYear','filterDateFrom','filterDateTo','filterInvDateFrom','filterInvDateTo','filterInvoiceType','filterStatus']
     .forEach(fid => { const el = id(fid); if (el) el.value = ''; });
+  State.dashPage = 1;
   renderWoTable(getDashboardBaseList(State.woList));
 }
 
 function renderWoTable(list) {
   const loadingEl = id('woTableLoading');
-  if (loadingEl) loadingEl.style.display = 'none'; // always hide skeleton when rendering
+  if (loadingEl) loadingEl.style.display = 'none';
+  State.dashDisplayList = list;
   const tbody = id('woTableBody');
   // Ensure the cards container exists next to the table-card
   let cardsEl = id('woCardsContainer');
@@ -572,12 +589,18 @@ function renderWoTable(list) {
     id('woTable').style.display = 'none';
     id('woTableEmpty').style.display = 'block';
     cardsEl.innerHTML = '';
+    const pEl = id('dashPagination');
+    if (pEl) pEl.innerHTML = '';
     return;
   }
   id('woTable').style.display = 'table';
   id('woTableEmpty').style.display = 'none';
-  tbody.innerHTML = list.map(w => woRow(w)).join('');
-  cardsEl.innerHTML = list.map(w => woCard(w)).join('');
+
+  const { items, safePage, totalPages, total } = paginateList(list, State.dashPage);
+  State.dashPage = safePage;
+  tbody.innerHTML = items.map(w => woRow(w)).join('');
+  cardsEl.innerHTML = items.map(w => woCard(w)).join('');
+  renderPagination('dashPagination', safePage, totalPages, total, 'setDashPage');
 
   // Delegate: click anywhere on a row/card opens detail; download <a> links still work
   const bindDetail = (container, rowSelector) => {
@@ -685,32 +708,64 @@ function statusBadgeHtml(status) {
 // ── ALL WO PAGE ────────────────────────────────────────────────────
 async function loadAllWo() {
   const container = id('allWoContent');
-  // Wire click delegation once via onclick (avoids stacking listeners on re-render)
   container.onclick = (e) => {
     if (e.target.closest('a[href]')) return;
     const row = e.target.closest('tr[data-detail], .wo-card[data-detail]');
     if (row?.dataset.detail) openWoDetail(parseInt(row.dataset.detail));
   };
+
+  // Wire All WO filter controls (once via flag)
+  const filterQ = id('allWoFilterQ');
+  const filterStatus = id('allWoFilterStatus');
+  if (filterQ && !filterQ._bound) {
+    filterQ._bound = true;
+    filterQ.addEventListener('input', filterAllWoContent);
+    filterStatus?.addEventListener('change', filterAllWoContent);
+    id('allWoFilterClearBtn')?.addEventListener('click', () => {
+      if (filterQ) filterQ.value = '';
+      if (filterStatus) filterStatus.value = '';
+      State.allWoFilters = { q: '', status: '' };
+      State.allWoPage = 1;
+      renderAllWoContent(State.woList);
+    });
+    id('allWoToggleFilterBtn')?.addEventListener('click', () => {
+      const bar = id('allWoFilterBar');
+      const btn = id('allWoToggleFilterBtn');
+      bar?.classList.toggle('hidden');
+      if (btn) btn.textContent = bar?.classList.contains('hidden') ? 'Search / Filter' : 'Hide Search';
+    });
+    id('allWoExportCsvBtn')?.addEventListener('click', exportAllWoCsv);
+  }
+
+  // Restore filter inputs from state
+  if (filterQ) filterQ.value = State.allWoFilters.q;
+  if (filterStatus) filterStatus.value = State.allWoFilters.status;
+
   if (State.woList.length) {
-    renderAllWoContent(State.woList); // use cache — no extra network call
+    renderAllWoContent(applyAllWoFilters(State.woList));
     return;
   }
   container.innerHTML = '<div class="loading-state">Loading…</div>';
   try {
     const res = await api('/api/workorders');
     State.woList = res.data || [];
-    renderAllWoContent(State.woList);
+    renderAllWoContent(applyAllWoFilters(State.woList));
   } catch(e) { container.innerHTML = '<div class="alert alert-error">Failed to load</div>'; }
 }
 
 function renderAllWoContent(list) {
+  State.allWoDisplayList = list;
   const container = id('allWoContent');
+  const paginationEl = id('allWoPagination');
   if (!list.length) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>No dispatch lists yet</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>No dispatch lists found</p></div>';
+    if (paginationEl) paginationEl.innerHTML = '';
     return;
   }
+  const { items, safePage, totalPages, total } = paginateList(list, State.allWoPage);
+  State.allWoPage = safePage;
   container.innerHTML = `
-    <div class="wo-cards" id="allWoCards">${list.map(w => woCard(w)).join('')}</div>
+    <div class="wo-cards" id="allWoCards">${items.map(w => woCard(w)).join('')}</div>
     <div class="table-card"><div class="table-wrap">
       <table class="wo-table">
         <thead><tr>
@@ -719,9 +774,10 @@ function renderAllWoContent(list) {
           <th>Ready For Dispatch</th><th>Collection</th>
           <th>Status</th><th>Ver.</th><th>Actions</th>
         </tr></thead>
-        <tbody>${list.map(w => woRow(w)).join('')}</tbody>
+        <tbody>${items.map(w => woRow(w)).join('')}</tbody>
       </table>
     </div></div>`;
+  renderPagination('allWoPagination', safePage, totalPages, total, 'setAllWoPage');
 }
 
 // ── CREATE FORM ─────────────────────────────────────────────────────
@@ -891,7 +947,7 @@ function renderWoDetail(wo) {
     deleteBtn.style.display = State.user?.role === 'GENERAL_MANAGER' ? 'flex' : 'none';
     deleteBtn.onclick = () => confirmDeleteWo(wo.id, wo.woNumber);
   }
-  id('backBtn').onclick = () => history.length > 1 ? navigateTo('dashboard') : navigateTo('dashboard');
+  id('backBtn').onclick = () => navigateTo(State.prevPage || 'dashboard');
 
   const role = State.user?.role;
   const html = `
@@ -1956,10 +2012,15 @@ async function syncWorkOrders() {
   try {
     const res = await api('/api/workorders');
     const latest = Array.isArray(res.data) ? res.data : [];
-    if (JSON.stringify(latest) !== JSON.stringify(State.woList)) {
+    const changed = latest.length !== State.woList.length ||
+      (latest.length > 0 && (
+        latest[0]?.id !== State.woList[0]?.id ||
+        latest[latest.length - 1]?.id !== State.woList[State.woList.length - 1]?.id
+      ));
+    if (changed) {
       State.woList = latest;
       if (State.page === 'dashboard') renderDashboard();
-      if (State.page === 'all-wo') renderAllWoContent(latest); // re-render from fresh data, no extra fetch
+      if (State.page === 'all-wo') renderAllWoContent(applyAllWoFilters(latest));
     }
   } catch (err) {
     console.warn('Auto-sync failed', err);
@@ -2028,7 +2089,7 @@ async function api(url, method = 'GET', body = null) {
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(url, opts);
   if (res.status === 401) {
-    logout();
+    forceLogout();
     throw new Error('Session expired. Please log in again.');
   }
   const data = await res.json();
@@ -2041,7 +2102,7 @@ async function apiFormData(url, formData, method = 'POST') {
   if (State.token) opts.headers = { 'Authorization': `Bearer ${State.token}` };
   const res = await fetch(url, opts);
   if (res.status === 401) {
-    logout();
+    forceLogout();
     throw new Error('Session expired. Please log in again.');
   }
   const data = await res.json();
@@ -2225,6 +2286,7 @@ async function loadUserManagement() {
   try {
     const res = await api('/api/auth/users');
     const users = res.data || [];
+    State.userCache = users;
     tbody.innerHTML = users.map(u => `
       <tr>
         <td><strong>${esc(u.fullName)}</strong></td>
@@ -2298,15 +2360,16 @@ async function submitAddUser() {
 
 async function openEditUserModal(userId) {
   id('modalTitle').textContent = '✏ Edit User';
-  id('modalBody').innerHTML = `<div style="text-align:center;padding:20px;color:var(--text3)">Loading…</div>`;
-  id('modalFooter').innerHTML = '';
   id('modal').style.display = 'flex';
 
-  try {
-    const res = await api('/api/auth/users');
-    const u = (res.data || []).find(x => x.id === userId);
-    if (!u) throw new Error('User not found');
+  const u = State.userCache.find(x => x.id === userId);
+  if (!u) {
+    id('modalBody').innerHTML = `<div style="color:var(--red);padding:20px">User not found. Please close and reopen User Management.</div>`;
+    id('modalFooter').innerHTML = `<button class="btn btn-outline" onclick="closeModal()">Close</button>`;
+    return;
+  }
 
+  try {
     id('modalBody').innerHTML = `
       <div style="display:flex;flex-direction:column;gap:14px">
         <div class="field-group">
@@ -2365,4 +2428,98 @@ async function toggleUserActive(userId, name) {
     showToast(`User ${name} status changed`, 'info');
     loadUserManagement();
   } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ── PAGINATION ──────────────────────────────────────────────────────
+const PER_PAGE = 25;
+
+function paginateList(list, page) {
+  const totalPages = Math.max(1, Math.ceil(list.length / PER_PAGE));
+  const safePage = Math.min(Math.max(1, page || 1), totalPages);
+  const start = (safePage - 1) * PER_PAGE;
+  return { items: list.slice(start, start + PER_PAGE), safePage, totalPages, total: list.length };
+}
+
+function renderPagination(containerId, currentPage, totalPages, total, callbackName) {
+  const el = id(containerId);
+  if (!el) return;
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+  const start = (currentPage - 1) * PER_PAGE + 1;
+  const end = Math.min(currentPage * PER_PAGE, total);
+  let html = `<span class="pagination-info">${start}–${end} of ${total}</span>`;
+  html += `<button class="page-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="${callbackName}(${currentPage - 1})">&#8249;</button>`;
+  let from = Math.max(1, currentPage - 2);
+  let to = Math.min(totalPages, from + 4);
+  from = Math.max(1, to - 4);
+  if (from > 1) {
+    html += `<button class="page-btn" onclick="${callbackName}(1)">1</button>`;
+    if (from > 2) html += `<span class="pagination-info">…</span>`;
+  }
+  for (let p = from; p <= to; p++) {
+    html += `<button class="page-btn${p === currentPage ? ' active' : ''}" onclick="${callbackName}(${p})">${p}</button>`;
+  }
+  if (to < totalPages) {
+    if (to < totalPages - 1) html += `<span class="pagination-info">…</span>`;
+    html += `<button class="page-btn" onclick="${callbackName}(${totalPages})">${totalPages}</button>`;
+  }
+  html += `<button class="page-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="${callbackName}(${currentPage + 1})">&#8250;</button>`;
+  el.innerHTML = html;
+}
+
+window.setDashPage = function(n) {
+  State.dashPage = n;
+  renderWoTable(State.dashDisplayList || []);
+};
+
+window.setAllWoPage = function(n) {
+  State.allWoPage = n;
+  renderAllWoContent(State.allWoDisplayList || State.woList);
+};
+
+// ── ALL WO FILTERS ──────────────────────────────────────────────────
+function applyAllWoFilters(list) {
+  const q = (State.allWoFilters.q || '').toLowerCase();
+  const status = State.allWoFilters.status || '';
+  let filtered = list;
+  if (q) filtered = filtered.filter(w =>
+    String(w.customerName || '').toLowerCase().includes(q) ||
+    String(w.woNumber || '').toLowerCase().includes(q) ||
+    String(w.invoiceNumber || '').toLowerCase().includes(q)
+  );
+  if (status) filtered = filtered.filter(w => w.status === status);
+  return filtered;
+}
+
+function filterAllWoContent() {
+  State.allWoFilters.q = (id('allWoFilterQ')?.value || '').trim().toLowerCase();
+  State.allWoFilters.status = id('allWoFilterStatus')?.value || '';
+  State.allWoPage = 1;
+  renderAllWoContent(applyAllWoFilters(State.woList));
+}
+
+function exportAllWoCsv() {
+  const list = State.allWoDisplayList?.length ? State.allWoDisplayList : State.woList;
+  if (!list.length) { showToast('No data to export', 'info'); return; }
+  const headers = ['Dispatch No.','Customer','WO Date','Shipment','Invoice Type',
+    'Stock','Packing','Invoice No.','Invoice Date','Ready','Collection','Status','Version'];
+  const rows = list.map(w => [
+    w.woNumber, w.customerName, w.woDate || '', w.shipmentMode || '',
+    w.invoiceType || 'Commercial', w.stockStatus || '', w.packagingStatus || '',
+    w.invoiceNumber || '', w.invoiceDate || '',
+    w.readyForDispatchStatus || '', w.collectionStatus || '',
+    w.status, w.version
+  ]);
+  const csv = [headers, ...rows]
+    .map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dispatch-list-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${list.length} records to CSV`, 'success');
 }
