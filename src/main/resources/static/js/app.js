@@ -602,25 +602,24 @@ function renderWoTable(list) {
   cardsEl.innerHTML = items.map(w => woCard(w)).join('');
   renderPagination('dashPagination', safePage, totalPages, total, 'setDashPage');
 
-  // Delegate: click anywhere on a row/card opens detail; download <a> links still work
-  const bindDetail = (container, rowSelector) => {
-    container.addEventListener('click', (e) => {
-      if (e.target.closest('a[href]')) return; // let download links pass through
-      const row = e.target.closest(rowSelector);
-      if (row?.dataset.detail) openWoDetail(parseInt(row.dataset.detail));
-    });
+  // Use .onclick (property assignment) to prevent stacking listeners across re-renders
+  tbody.onclick = (e) => {
+    if (e.target.closest('a[href]')) return;
+    const row = e.target.closest('tr[data-detail]');
+    if (row?.dataset.detail) openWoDetail(parseInt(row.dataset.detail));
   };
-  bindDetail(tbody, 'tr[data-detail]');
-  bindDetail(cardsEl, '.wo-card[data-detail]');
-
-  // Sync keyboard focus index when mouse hovers a row
-  tbody.addEventListener('mouseover', (e) => {
+  cardsEl.onclick = (e) => {
+    if (e.target.closest('a[href]')) return;
+    const row = e.target.closest('.wo-card[data-detail]');
+    if (row?.dataset.detail) openWoDetail(parseInt(row.dataset.detail));
+  };
+  tbody.onmouseover = (e) => {
     const row = e.target.closest('tr[data-detail]');
     if (!row) return;
     const rows = [...tbody.querySelectorAll('tr[data-detail]')];
     const idx = rows.indexOf(row);
     if (idx !== _focusedRowIndex) setRowFocus(rows, idx);
-  });
+  };
 }
 
 function woCard(w) {
