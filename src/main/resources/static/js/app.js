@@ -298,7 +298,7 @@ function setupUserUI() {
 }
 
 function roleLabel(role) {
-  const map = { ADMIN:'Admin', GENERAL_MANAGER:'General Manager', STORE:'Store', INVOICE_CREATOR:'Invoice Creator', GUEST:'Guest' };
+  const map = { ADMIN:'Admin', GENERAL_MANAGER:'General Manager', STORE:'Store', INVOICE_CREATOR:'Invoice Creator', COSTING:'Costing', GUEST:'Guest' };
   return map[role] || role;
 }
 
@@ -1178,7 +1178,7 @@ function renderFileSection(title, files, downloadPrefix = null) {
         // For Excel files use blob download with customer-named filename; others use direct link
         const ext = name.match(/\.(xlsx?|csv)$/i)?.[0] || '.xlsx';
         const dlBtn = (isExcel && downloadPrefix)
-          ? `<button class="btn btn-outline btn-xs" onclick="downloadFileAs(${f.id}, ${JSON.stringify(downloadPrefix + ext)})">↓ Download</button>`
+          ? `<button class="btn btn-outline btn-xs" data-fid="${f.id}" data-fname="${esc(downloadPrefix + ext)}" onclick="downloadFileAs(+this.dataset.fid, this.dataset.fname)">↓ Download</button>`
           : `<a href="${f.downloadUrl}?token=${State.token}" class="btn btn-outline btn-xs">↓ Download</a>`;
         return `<div class="file-item">
           <div><div class="file-name">${esc(name)}</div><div class="file-meta">v${f.version} · ${f.uploadedBy||''}</div></div>
@@ -1847,6 +1847,8 @@ function addNotification(eventType, message, dispatchNo, woId) {
     console.warn('Notification received with empty message for eventType:', eventType);
     return;
   }
+  // COSTING users only receive Ready For Dispatch notifications
+  if (State.user?.role === 'COSTING' && eventType !== 'READY_FOR_DISPATCH_DONE') return;
   const icon  = NOTIF_ICONS[eventType]  || '🔔';
   const title = NOTIF_TITLES[eventType] || 'Dispatch Update';
   const notif = { icon, text: message, time: new Date().toLocaleTimeString(), dispatchNo: dispatchNo || '', woId: woId || null, read: false };
@@ -2297,7 +2299,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── USER MANAGEMENT ────────────────────────────────────────────────
-const ALL_ROLES = ['ADMIN','GENERAL_MANAGER','STORE','INVOICE_CREATOR','GUEST'];
+const ALL_ROLES = ['ADMIN','GENERAL_MANAGER','STORE','INVOICE_CREATOR','COSTING','GUEST'];
 
 async function loadUserManagement() {
   const tbody = id('userTableBody');
