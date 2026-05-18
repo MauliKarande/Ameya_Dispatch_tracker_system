@@ -298,7 +298,7 @@ function setupUserUI() {
 }
 
 function roleLabel(role) {
-  const map = { ADMIN:'Admin', GENERAL_MANAGER:'General Manager', STORE:'Store', INVOICE_CREATOR:'Invoice Creator', SALES:'Sales', GUEST:'Guest' };
+  const map = { ADMIN:'Admin', GENERAL_MANAGER:'General Manager', STORE:'Store', INVOICE_CREATOR:'Invoice Creator', GUEST:'Guest' };
   return map[role] || role;
 }
 
@@ -1847,8 +1847,6 @@ function addNotification(eventType, message, dispatchNo, woId) {
     console.warn('Notification received with empty message for eventType:', eventType);
     return;
   }
-  // SALES users only receive Ready For Dispatch notifications
-  if (State.user?.role === 'SALES' && eventType !== 'READY_FOR_DISPATCH_DONE') return;
   const icon  = NOTIF_ICONS[eventType]  || '🔔';
   const title = NOTIF_TITLES[eventType] || 'Dispatch Update';
   const notif = { icon, text: message, time: new Date().toLocaleTimeString(), dispatchNo: dispatchNo || '', woId: woId || null, read: false };
@@ -2299,7 +2297,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── USER MANAGEMENT ────────────────────────────────────────────────
-const ALL_ROLES = ['ADMIN','GENERAL_MANAGER','STORE','INVOICE_CREATOR','SALES','GUEST'];
+const ALL_ROLES = ['ADMIN','GENERAL_MANAGER','STORE','INVOICE_CREATOR','GUEST'];
 
 async function loadUserManagement() {
   const tbody = id('userTableBody');
