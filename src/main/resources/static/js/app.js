@@ -994,7 +994,7 @@ function renderWoDetail(wo) {
           ${(role === 'INVOICE_CREATOR') ? `<button class="btn btn-outline btn-xs" id="uploadPdfBtn">↑ Invoice PDF</button>` : ''}
         </div>
         <div class="detail-section-body">
-          ${renderFileSection('Excel Files', wo.excelFiles)}
+          ${renderFileSection('Excel Files', wo.excelFiles, `${wo.customerName} ${wo.woNumber}`)}
           ${renderFileSection('Invoice PDFs', wo.pdfFiles)}
         </div>
       </div>
@@ -1152,7 +1152,7 @@ function renderPackagingDetailsSection(wo) {
   return html;
 }
 
-function renderFileSection(title, files) {
+function renderFileSection(title, files, downloadPrefix = null) {
   if (!files || !files.length) return `<div style="margin-bottom:12px"><strong style="font-size:.78rem;color:var(--text2)">${title}</strong><div style="color:var(--text3);font-size:.78rem;margin-top:4px">None</div></div>`;
   return `<div style="margin-bottom:12px">
     <strong style="font-size:.78rem;color:var(--text2)">${title}</strong>
@@ -1170,11 +1170,16 @@ function renderFileSection(title, files) {
         const deleteBtn = (isInvoicePdf && State.user?.role === 'INVOICE_CREATOR')
           ? `<button class="btn btn-danger btn-xs" onclick="deleteInvoicePdf(${f.id},'${esc(name)}')">🗑 Delete</button>`
           : '';
+        // For Excel files use blob download with customer-named filename; others use direct link
+        const ext = name.match(/\.(xlsx?|csv)$/i)?.[0] || '.xlsx';
+        const dlBtn = (isExcel && downloadPrefix)
+          ? `<button class="btn btn-outline btn-xs" onclick="downloadFileAs(${f.id}, ${JSON.stringify(downloadPrefix + ext)})">↓ Download</button>`
+          : `<a href="${f.downloadUrl}?token=${State.token}" class="btn btn-outline btn-xs">↓ Download</a>`;
         return `<div class="file-item">
           <div><div class="file-name">${esc(name)}</div><div class="file-meta">v${f.version} · ${f.uploadedBy||''}</div></div>
           <div style="display:flex;gap:4px;flex-wrap:wrap">
             ${viewBtn}
-            <a href="${f.downloadUrl}?token=${State.token}" class="btn btn-outline btn-xs">↓ Download</a>
+            ${dlBtn}
             ${deleteBtn}
           </div>
         </div>`;
@@ -2494,6 +2499,25 @@ function filterAllWoContent() {
   State.allWoFilters.status = id('allWoFilterStatus')?.value || '';
   State.allWoPage = 1;
   renderAllWoContent(applyAllWoFilters(State.woList));
+}
+
+async function downloadFileAs(fileId, filename) {
+  try {
+    showToast('Preparing download…', 'info');
+    const res = await fetch(`/api/files/download/${fileId}?token=${State.token}`);
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    showToast('Download failed: ' + e.message, 'error');
+  }
 }
 
 function exportAllWoCsv() {
