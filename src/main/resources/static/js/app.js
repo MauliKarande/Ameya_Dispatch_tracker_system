@@ -437,7 +437,7 @@ function getDashboardStatsList() {
   if (isDashboardFilterActive()) {
     return applyFilters(State.woList, true);
   }
-  if (State.dashboardView === 'ALL' || State.dashboardView === 'READY_INVOICE') {
+  if (State.dashboardView === 'ALL' || State.dashboardView === 'READY_INVOICE' || State.dashboardView === 'READY_DISPATCH') {
     return getDashboardBaseList(State.woList);
   }
   return getDashboardBaseList(State.woList).filter(isCurrentMonth);
@@ -469,12 +469,14 @@ function bindDashboardControls() {
     };
   }
 
-  ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn', 'dashReadyInvoiceBtn'].forEach(btnId => {
+  ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn', 'dashReadyInvoiceBtn', 'dashReadyDispatchBtn'].forEach(btnId => {
     const btn = id(btnId);
     if (!btn) return;
     btn.onclick = () => {
       if (btnId === 'dashReadyInvoiceBtn') {
         State.dashboardView = 'READY_INVOICE';
+      } else if (btnId === 'dashReadyDispatchBtn') {
+        State.dashboardView = 'READY_DISPATCH';
       } else if (btnId === 'dashCompletedBtn') {
         State.dashboardView = 'COMPLETED';
       } else if (btnId === 'dashAllBtn') {
@@ -516,6 +518,9 @@ function getDashboardBaseList(list) {
   if (State.dashboardView === 'ALL') return list;
   if (State.dashboardView === 'READY_INVOICE') return list.filter(w =>
     w.stockStatus === 'DONE' && w.packagingStatus === 'DONE' && w.invoiceStatus === 'PENDING'
+  );
+  if (State.dashboardView === 'READY_DISPATCH') return list.filter(w =>
+    w.readyForDispatchStatus === 'DONE'
   );
   return list.filter(w => w.status === 'IN_PROGRESS');
 }
