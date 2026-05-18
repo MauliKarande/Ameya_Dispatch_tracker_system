@@ -43,7 +43,7 @@ public class User {
         GENERAL_MANAGER,   // Creates/edits dispatches
         STORE,             // Stock, Packing, Ready For Dispatch, Collection
         INVOICE_CREATOR,   // Invoice work
-        COSTING,           // View only — notified only on Ready For Dispatch
+        SALES,             // View only — notified only on Ready For Dispatch
         GUEST              // View only
     }
 }
