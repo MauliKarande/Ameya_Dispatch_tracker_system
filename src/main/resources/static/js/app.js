@@ -1820,20 +1820,31 @@ function saveNotifs() {
 }
 
 function markNotifRead(origIdx) {
-  if (State.notifications[origIdx]) {
-    State.notifications[origIdx].read = true;
-    saveNotifs(); renderNotifBadge(); renderNotifList();
+  const notif = State.notifications[origIdx];
+  if (!notif) return;
+  notif.read = true;
+  saveNotifs(); renderNotifBadge(); renderNotifList();
+  if (notif.woId) {
+    id('notifPanel').style.display = 'none';
+    openWoDetail(notif.woId);
+  } else if (notif.dispatchNo) {
+    // Fallback: look up by WO number in cached list
+    const wo = State.woList.find(w => w.woNumber === notif.dispatchNo);
+    if (wo) {
+      id('notifPanel').style.display = 'none';
+      openWoDetail(wo.id);
+    }
   }
 }
 
-function addNotification(eventType, message, dispatchNo) {
+function addNotification(eventType, message, dispatchNo, woId) {
   if (!message || message.trim() === '') {
     console.warn('Notification received with empty message for eventType:', eventType);
     return;
   }
   const icon  = NOTIF_ICONS[eventType]  || '🔔';
   const title = NOTIF_TITLES[eventType] || 'Dispatch Update';
-  const notif = { icon, text: message, time: new Date().toLocaleTimeString(), dispatchNo: dispatchNo || '', read: false };
+  const notif = { icon, text: message, time: new Date().toLocaleTimeString(), dispatchNo: dispatchNo || '', woId: woId || null, read: false };
   State.notifications.unshift(notif);
   if (State.notifications.length > 100) State.notifications.pop();
   saveNotifs(); 
@@ -1864,11 +1875,11 @@ function renderNotifList() {
     return;
   }
   list.innerHTML = items.map(n =>
-    `<div class="notif-item${n.read ? '' : ' notif-unread'}" onclick="markNotifRead(${n._i})">
+    `<div class="notif-item${n.read ? '' : ' notif-unread'}${(n.woId || n.dispatchNo) ? ' notif-clickable' : ''}" onclick="markNotifRead(${n._i})">
       <span class="notif-icon">${n.icon || '🔔'}</span>
       <div class="notif-content">
         <div class="notif-text">${esc(n.text)}</div>
-        ${n.dispatchNo ? `<div class="notif-dispatch">${esc(n.dispatchNo)}</div>` : ''}
+        ${n.dispatchNo ? `<div class="notif-dispatch">${esc(n.dispatchNo)}${(n.woId || n.dispatchNo) ? ' <span style="font-size:.7rem;color:var(--blue-600)">→ Open</span>' : ''}</div>` : ''}
         <div class="notif-time">${n.time}${!n.read ? ' <span class="notif-dot">●</span>' : ''}</div>
       </div>
     </div>`).join('');
@@ -1899,7 +1910,7 @@ function connectSSE() {
           if (State.page === 'dashboard') renderDashboard();
           if (State.page === 'detail') renderWoDetail(updatedWo);
         }
-        addNotification(eventType, messageText, updatedWo?.woNumber);
+        addNotification(eventType, messageText, updatedWo?.woNumber, updatedWo?.id);
         _sseRetryDelay = 2000;
       } catch (err) { console.warn('SSE parse error:', err); }
     });
@@ -1914,7 +1925,7 @@ function connectSSE() {
   evtSrc.addEventListener('message', (e) => {
     try {
       const payload = JSON.parse(e.data);
-      if (payload?.message) addNotification('UPDATE', payload.message, payload.data?.woNumber);
+      if (payload?.message) addNotification('UPDATE', payload.message, payload.data?.woNumber, payload.data?.id);
     } catch (err) {
       // ignore non-JSON heartbeat or unrelated message events
     }

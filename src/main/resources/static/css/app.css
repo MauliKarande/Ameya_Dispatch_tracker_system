@@ -325,9 +325,11 @@ height: 100px;
 .notif-item {
   display:flex; gap:10px; align-items:flex-start;
   padding:10px 14px; border-bottom:1px solid var(--border);
-  font-size:.8rem; transition:background .15s;
+  font-size:.8rem; transition:background .15s; cursor:default;
 }
 .notif-item:hover { background:var(--surface2); }
+.notif-clickable { cursor:pointer; }
+.notif-clickable:hover { background:color-mix(in srgb, var(--blue-600) 6%, var(--surface2)); }
 .notif-unread { background:color-mix(in srgb, var(--blue-600) 8%, var(--surface)); }
 .notif-unread:hover { background:color-mix(in srgb, var(--blue-600) 14%, var(--surface)); }
 .notif-icon { font-size:1.1rem; flex-shrink:0; margin-top:1px; }
