@@ -43,6 +43,10 @@ public class FileStorage {
     @Column(length = 500)
     private String remarks;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean active = false;
+
     @Column
     @Builder.Default
     private boolean deleted = false;

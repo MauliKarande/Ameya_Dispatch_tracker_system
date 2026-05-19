@@ -85,6 +85,40 @@ public class WorkOrderServiceImpl implements WorkOrderService {
             .stream().map(this::toSummaryDTO).collect(Collectors.toList());
     }
 
+    // ── EDIT DETAILS ─────────────────────────────────────────
+    @Override
+    public WorkOrderDetailDTO updateWorkOrderDetails(Long id, WorkOrderEditRequest req, String username) {
+        WorkOrder wo = findWoOrThrow(id);
+        User user = getUser(username);
+        List<String> changes = new ArrayList<>();
+        if (req.getCustomerName() != null && !req.getCustomerName().isBlank()
+                && !req.getCustomerName().equals(wo.getCustomerName())) {
+            changes.add("Customer: " + wo.getCustomerName() + " → " + req.getCustomerName());
+            wo.setCustomerName(req.getCustomerName());
+        }
+        if (req.getShipmentMode() != null && !req.getShipmentMode().isBlank()
+                && !req.getShipmentMode().equals(wo.getShipmentMode())) {
+            changes.add("Shipment: " + wo.getShipmentMode() + " → " + req.getShipmentMode());
+            wo.setShipmentMode(req.getShipmentMode());
+        }
+        if (req.getInvoiceType() != null && !req.getInvoiceType().isBlank()
+                && !req.getInvoiceType().equals(wo.getInvoiceType())) {
+            changes.add("Invoice Type: " + wo.getInvoiceType() + " → " + req.getInvoiceType());
+            wo.setInvoiceType(req.getInvoiceType());
+        }
+        if (req.getWoDate() != null && !req.getWoDate().equals(wo.getWoDate())) {
+            changes.add("Date: " + wo.getWoDate() + " → " + req.getWoDate());
+            wo.setWoDate(req.getWoDate());
+        }
+        if (changes.isEmpty()) return toDetailDTO(wo);
+        workOrderRepository.save(wo);
+        logActivity(wo, username, user.getFullName(),
+            "Dispatch details updated: " + String.join(", ", changes), ActivityLog.ActionType.WO_UPDATED);
+        WorkOrderDetailDTO dto = toDetailDTO(wo);
+        NotificationController.broadcastWithData("DISPATCH_UPDATED", user.getFullName() + " updated details for " + wo.getWoNumber(), dto);
+        return dto;
+    }
+
     // ── REVISION ─────────────────────────────────────────────
     @Override
     public WorkOrderDetailDTO uploadNewExcel(Long id, MultipartFile excelFile, String revisionReason, String username) {

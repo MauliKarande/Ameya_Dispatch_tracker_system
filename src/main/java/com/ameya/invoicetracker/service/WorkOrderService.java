@@ -10,6 +10,7 @@ public interface WorkOrderService {
     WorkOrderDetailDTO getWorkOrderByWoNumber(String woNumber);
     List<WorkOrderSummaryDTO> getAllWorkOrders();
     List<WorkOrderSummaryDTO> searchWorkOrders(SearchRequest request);
+    WorkOrderDetailDTO updateWorkOrderDetails(Long id, WorkOrderEditRequest req, String username);
     WorkOrderDetailDTO uploadNewExcel(Long id, MultipartFile excelFile, String revisionReason, String username);
     WorkOrderDetailDTO updateStockStatus(Long id, String action, String username);
     WorkOrderDetailDTO savePackagingDetails(Long id, PackagingRequest request, String username);

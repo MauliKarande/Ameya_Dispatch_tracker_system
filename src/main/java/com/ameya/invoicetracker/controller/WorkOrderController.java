@@ -62,6 +62,16 @@ public class WorkOrderController {
             workOrderService.createWorkOrder(req, excelFile, ud.getUsername())));
     }
 
+    @PutMapping("/{id}/details")
+    @PreAuthorize("hasRole('GENERAL_MANAGER')")
+    public ResponseEntity<ApiResponse<WorkOrderDetailDTO>> updateDetails(
+            @PathVariable Long id,
+            @RequestBody WorkOrderEditRequest req,
+            @AuthenticationPrincipal UserDetails ud) {
+        return ResponseEntity.ok(ApiResponse.ok("Dispatch updated",
+            workOrderService.updateWorkOrderDetails(id, req, ud.getUsername())));
+    }
+
     @PostMapping("/{id}/excel")
     @PreAuthorize("hasRole('GENERAL_MANAGER')")
     public ResponseEntity<ApiResponse<WorkOrderDetailDTO>> uploadExcel(

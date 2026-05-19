@@ -958,7 +958,9 @@ function renderWoDetail(wo) {
     <!-- Info Grid -->
     <div class="detail-grid">
       <div class="detail-section">
-        <div class="detail-section-header">Dispatch Info</div>
+        <div class="detail-section-header">Dispatch Info
+          ${role === 'GENERAL_MANAGER' ? `<button class="btn btn-outline btn-xs" id="editDetailsBtn">✏ Edit</button>` : ''}
+        </div>
         <div class="detail-section-body">
           <div class="detail-row"><span class="detail-label">Dispatch No.</span><span class="detail-value" style="font-family:monospace">${esc(wo.woNumber)}</span></div>
           <div class="detail-row"><span class="detail-label">Customer</span><span class="detail-value">${esc(wo.customerName)}</span></div>
@@ -1282,6 +1284,9 @@ function bindDetailActions(wo) {
     await patchStatus(`/api/workorders/${wo.id}/collection?action=PENDING`, 'Collection reverted');
   });
 
+  // Dispatch Info edit
+  id('editDetailsBtn')?.addEventListener('click', () => showEditDetailsModal(wo));
+
   // Notes & Issues
   id('editNoteBtn')?.addEventListener('click', () => showNoteModal(wo));
   id('reportIssueBtn')?.addEventListener('click', () => showIssueModal(wo));
@@ -1440,6 +1445,63 @@ function showInvoiceModal(wo, isEdit) {
       triggerImmediateSync();
     } catch(e) { showAlert(alertEl, e.message, 'error'); }
     finally { btn.disabled = false; btn.textContent = isEdit ? 'Update Invoice' : 'Mark Invoice Done'; }
+  });
+}
+
+// ── EDIT DETAILS MODAL ─────────────────────────────────────────────
+function showEditDetailsModal(wo) {
+  const custList = State.customers.map(c => `<option value="${esc(c.name)}"></option>`).join('');
+  const modeOpts = State.shipmentModes.map(m =>
+    `<option value="${esc(m.name)}"${m.name === wo.shipmentMode ? ' selected' : ''}>${esc(m.name)}</option>`
+  ).join('');
+  const typeOpts = State.invoiceTypes.map(t =>
+    `<option value="${esc(t.name)}"${t.name === (wo.invoiceType || 'Commercial') ? ' selected' : ''}>${esc(t.name)}</option>`
+  ).join('');
+
+  showModal('Edit Dispatch Details', `
+    <div class="field-group" style="margin-bottom:12px">
+      <label>Customer</label>
+      <input type="text" id="editCustomerInput" value="${esc(wo.customerName)}" list="editCustDatalist" autocomplete="off" placeholder="Customer name"/>
+      <datalist id="editCustDatalist">${custList}</datalist>
+    </div>
+    <div class="field-group" style="margin-bottom:12px">
+      <label>Shipment Mode</label>
+      <select id="editShipmentSel">${modeOpts}</select>
+    </div>
+    <div class="field-group" style="margin-bottom:12px">
+      <label>Invoice Type</label>
+      <select id="editInvoiceTypeSel">${typeOpts}</select>
+    </div>
+    <div class="field-group" style="margin-bottom:12px">
+      <label>Dispatch Date</label>
+      <input type="date" id="editWoDate" value="${wo.woDate || ''}"/>
+    </div>
+    <div id="editDetailsAlert" class="alert" style="display:none;margin-top:10px"></div>
+  `, [
+    { label: 'Save Changes', cls: 'btn-primary', id: 'saveEditDetailsBtn' },
+    { label: 'Cancel', cls: 'btn-outline', close: true }
+  ]);
+
+  id('saveEditDetailsBtn')?.addEventListener('click', async () => {
+    const customerName = id('editCustomerInput').value.trim();
+    const shipmentMode = id('editShipmentSel').value;
+    const invoiceType  = id('editInvoiceTypeSel').value || 'Commercial';
+    const woDate       = id('editWoDate').value;
+    const alertEl      = id('editDetailsAlert');
+    if (!customerName) { showAlert(alertEl, 'Customer name is required.', 'error'); return; }
+    if (!shipmentMode) { showAlert(alertEl, 'Shipment mode is required.', 'error'); return; }
+    if (!woDate)       { showAlert(alertEl, 'Dispatch date is required.', 'error'); return; }
+    const btn = id('saveEditDetailsBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const res = await api(`/api/workorders/${wo.id}/details`, 'PUT', { customerName, shipmentMode, invoiceType, woDate });
+      State.currentWo = res.data;
+      renderWoDetail(res.data);
+      closeModal();
+      showToast('Dispatch details updated', 'success');
+      triggerImmediateSync();
+    } catch(e) { showAlert(alertEl, e.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Changes'; }
   });
 }
 
