@@ -314,7 +314,7 @@ function bindNav() {
 
 function navigateTo(page) {
   _focusedRowIndex = -1;
-  State.prevPage = State.page;
+  if (State.page !== page) State.prevPage = State.page;
   State.page = page;
   localStorage.setItem('lastPage', page);
   if (page !== 'detail') {
@@ -969,6 +969,7 @@ function renderWoDetail(wo) {
           <div class="detail-row"><span class="detail-label">Dispatch Date</span><span class="detail-value">${formatDate(wo.woDate)}</span></div>
           <div class="detail-row"><span class="detail-label">Created By</span><span class="detail-value">${esc(wo.createdBy||'—')}</span></div>
           <div class="detail-row"><span class="detail-label">Version</span><span class="detail-value">v${wo.version}</span></div>
+          ${wo.revised && wo.revisionReason ? `<div class="detail-row"><span class="detail-label">Revision Reason</span><span class="detail-value" style="color:var(--amber);white-space:pre-wrap">${esc(wo.revisionReason)}</span></div>` : ''}
         </div>
       </div>
 
