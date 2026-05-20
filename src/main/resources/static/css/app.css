@@ -749,7 +749,7 @@ height: 100px;
 }
 
 /* ── EXCEL VIEWER ────────────────────────────────────────────────*/
-.excel-table-wrap { overflow: auto; }
+.excel-table-wrap { overflow: auto; overflow-x: scroll; }
 .excel-sheet-table {
   border-collapse: collapse;
   font-size: .78rem;
