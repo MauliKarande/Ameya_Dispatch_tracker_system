@@ -2484,6 +2484,11 @@ async function _calcExcelInvoiceTotal(file) {
       if (rowHidden[r]?.hidden) continue;
       const amtStr = _getCellText(ws, r, colMap.despAmt);
       if (_isDash(amtStr) || amtStr === '0') continue;
+      // Skip subtotal rows: require at least one other key column to be non-empty
+      const poVal  = 'po'   in colMap ? _getCellText(ws, r, colMap.po)   : 'x';
+      const srVal  = 'sr'   in colMap ? _getCellText(ws, r, colMap.sr)   : 'x';
+      const partVal = 'part' in colMap ? _getCellText(ws, r, colMap.part) : 'x';
+      if (!poVal && !srVal && !partVal) continue;
       const val = parseFloat(amtStr.replace(/,/g, ''));
       if (!isNaN(val)) total += val;
     }
@@ -2538,7 +2543,8 @@ async function viewExcelInvoice(fileId, fileName) {
       // Use _isDash to handle hyphen, en-dash, em-dash, Unicode minus, empty
       const amtVal = amtColIdx >= 0 ? vals[amtColIdx] : '';
       if (_isDash(amtVal) || amtVal === '0') continue;
-      if (vals.every(v => !v)) continue;
+      // Skip subtotal/total rows: they have only DESP. AMT. filled, rest empty
+      if (vals.filter(v => v).length < 2) continue;
       invoiceRows.push(vals);
     }
 
