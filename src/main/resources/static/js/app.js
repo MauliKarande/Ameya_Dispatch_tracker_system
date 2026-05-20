@@ -2398,44 +2398,62 @@ function closeExcelViewer() {
 }
 
 // ── INVOICE VIEW ────────────────────────────────────────────────────
+
+// Identical cell-extraction to renderExcelSheet: cell.w → SSF.format → raw
 function _getCellText(ws, r, c) {
   const cell = ws[XLSX.utils.encode_cell({ r, c })];
   if (!cell) return '';
-  return (cell.w !== undefined ? cell.w : cell.v !== undefined ? String(cell.v) : '').trim();
+  if (cell.w !== undefined) return cell.w.trim();
+  if (cell.t === 'n' && cell.z) {
+    try { return XLSX.SSF.format(cell.z, cell.v).trim(); } catch (_) { return String(cell.v).trim(); }
+  }
+  if (cell.v !== undefined) return String(cell.v).trim();
+  return '';
 }
 
-function _findInvoiceColumns(ws, range) {
+// Returns true when a DESP. AMT. value means "no amount":
+// handles hyphen (-), en-dash (–), em-dash (—), Unicode minus (−), and empty/whitespace.
+function _isDash(val) {
+  return !val || /^[\-–—−\s]+$/.test(val);
+}
+
+// Scan only visible (non-hidden) columns to find the 8 invoice column positions.
+// visCols: array of column indices to scan (pass visible cols from ws['!cols']).
+function _findInvoiceColumns(ws, range, visCols) {
+  const cols = visCols || (() => {
+    const a = []; for (let c = range.s.c; c <= range.e.c; c++) a.push(c); return a;
+  })();
+
   const targets = [
-    { key: 'po',       label: 'P.O.NO.',       test: v => /p\.?\s*o/i.test(v) },
-    { key: 'customer', label: 'CUSTOMER',       test: v => /cust/i.test(v) },
-    { key: 'sr',       label: 'SR. NO.',        test: v => /\bsr\b/i.test(v) },
-    { key: 'part',     label: 'PART NO.',       test: v => /part/i.test(v) },
-    { key: 'qty',      label: 'QTY.',           test: v => /qty|quantity/i.test(v) && !/desp/i.test(v) },
-    { key: 'rate',     label: 'RATE PER Pc.',   test: v => /rate/i.test(v) },
-    { key: 'despQty',  label: 'DESP. QTY.',     test: v => /desp/i.test(v) && /qt/i.test(v) && !/amt/i.test(v) },
-    { key: 'despAmt',  label: 'DESP. AMT.',     test: v => /desp/i.test(v) && /amt/i.test(v) },
+    { key: 'po',       test: v => /p\.?\s*o/i.test(v) },
+    { key: 'customer', test: v => /cust/i.test(v) },
+    { key: 'sr',       test: v => /\bsr\b/i.test(v) },
+    { key: 'part',     test: v => /part/i.test(v) },
+    { key: 'qty',      test: v => /qty|quantity/i.test(v) && !/desp/i.test(v) },
+    { key: 'rate',     test: v => /rate/i.test(v) },
+    { key: 'despQty',  test: v => /desp/i.test(v) && /qt/i.test(v) && !/amt/i.test(v) },
+    { key: 'despAmt',  test: v => /desp/i.test(v) && /amt/i.test(v) },
   ];
 
   for (let r = range.s.r; r <= Math.min(range.s.r + 20, range.e.r); r++) {
-    // Combine text from current row + next row per column to handle split headers
+    // Combine current row + next row text per visible column (handles split headers)
     const colText = {};
-    for (let c = range.s.c; c <= range.e.c; c++) {
+    for (const c of cols) {
       colText[c] = (_getCellText(ws, r, c) + ' ' + _getCellText(ws, r + 1, c)).trim();
     }
 
     const colMap = {};
     for (const t of targets) {
-      for (let c = range.s.c; c <= range.e.c; c++) {
+      for (const c of cols) {
         if (t.test(colText[c]) && !(t.key in colMap)) { colMap[t.key] = c; break; }
       }
     }
 
     if (Object.keys(colMap).length >= 4) {
-      // If the next row also contains header-like text (split-header case), skip it
-      const nextRowHits = Object.values(colMap).filter(c => {
-        const txt = _getCellText(ws, r + 1, c);
-        return targets.some(t => t.test(txt));
-      }).length;
+      // If headerRow+1 also matches as headers (split-header), skip it
+      const nextRowHits = Object.values(colMap).filter(c =>
+        targets.some(t => t.test(_getCellText(ws, r + 1, c)))
+      ).length;
       const dataStartRow = (nextRowHits >= 3) ? r + 2 : r + 1;
       return { headerRow: r, dataStartRow, colMap };
     }
@@ -2452,15 +2470,20 @@ async function _calcExcelInvoiceTotal(file) {
     const ws = wb.Sheets[wb.SheetNames[0]];
     if (!ws || !ws['!ref']) return null;
     const range = XLSX.utils.decode_range(ws['!ref']);
-    const found = _findInvoiceColumns(ws, range);
+    const colProps = ws['!cols'] || [];
+    const visCols = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      if (!colProps[c]?.hidden) visCols.push(c);
+    }
+    const found = _findInvoiceColumns(ws, range, visCols);
     if (!found || !('despAmt' in found.colMap)) return null;
     const { dataStartRow, colMap } = found;
     const rowHidden = ws['!rows'] || [];
     let total = 0;
     for (let r = dataStartRow; r <= range.e.r; r++) {
       if (rowHidden[r]?.hidden) continue;
-      const amtStr = _getCellText(ws, r, colMap.despAmt).trim();
-      if (!amtStr || amtStr === '-' || amtStr === '0') continue;
+      const amtStr = _getCellText(ws, r, colMap.despAmt);
+      if (_isDash(amtStr) || amtStr === '0') continue;
       const val = parseFloat(amtStr.replace(/,/g, ''));
       if (!isNaN(val)) total += val;
     }
@@ -2484,10 +2507,16 @@ async function viewExcelInvoice(fileId, fileName) {
   try {
     const res = await fetch(`/api/files/download/${fileId}?token=${State.token}`);
     if (!res.ok) throw new Error('Failed to fetch file');
-    const wb = XLSX.read(await res.arrayBuffer(), { type: 'array' });
+    const wb = XLSX.read(await res.arrayBuffer(), { type: 'array', cellStyles: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const range = XLSX.utils.decode_range(ws['!ref']);
-    const found = _findInvoiceColumns(ws, range);
+    // Same as renderExcelSheet: only consider visible (non-hidden) columns
+    const colProps = ws['!cols'] || [];
+    const visCols = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      if (!colProps[c]?.hidden) visCols.push(c);
+    }
+    const found = _findInvoiceColumns(ws, range, visCols);
 
     if (!found) {
       id('invViewBody').innerHTML = '<div style="color:var(--red,#e53e3e);padding:16px">Could not detect required columns (P.O.NO., CUSTOMER, PART NO., DESP. AMT., etc.) in this file.</div>';
@@ -2498,15 +2527,17 @@ async function viewExcelInvoice(fileId, fileName) {
     const ORDER = ['po','customer','sr','part','qty','rate','despQty','despAmt'];
     const presentKeys = ORDER.filter(k => k in colMap);
     colLabels = presentKeys.map(k => targets_labels[k]);
+    // Same as renderExcelSheet: skip hidden rows
     const rowHidden = ws['!rows'] || [];
+    const amtColIdx = presentKeys.indexOf('despAmt');
 
-    // Collect data rows — skip hidden Excel rows and rows where despAmt is '-' / blank / zero
+    // Collect rows — same hidden-row logic as View; additionally filter by despAmt
     for (let r = dataStartRow; r <= range.e.r; r++) {
       if (rowHidden[r]?.hidden) continue;
       const vals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
-      const amtIdx = presentKeys.indexOf('despAmt');
-      const amtVal = amtIdx >= 0 ? vals[amtIdx].trim() : '';
-      if (!amtVal || amtVal === '-' || amtVal === '0') continue;
+      // Use _isDash to handle hyphen, en-dash, em-dash, Unicode minus, empty
+      const amtVal = amtColIdx >= 0 ? vals[amtColIdx] : '';
+      if (_isDash(amtVal) || amtVal === '0') continue;
       if (vals.every(v => !v)) continue;
       invoiceRows.push(vals);
     }
@@ -2521,10 +2552,9 @@ async function viewExcelInvoice(fileId, fileName) {
       `<tr data-inv-row="${i}">${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`
     ).join('');
 
-    const amtIdx = presentKeys.indexOf('despAmt');
-    const grandTotal = amtIdx >= 0
+    const grandTotal = amtColIdx >= 0
       ? invoiceRows.reduce((s, row) => {
-          const v = parseFloat(String(row[amtIdx]).replace(/,/g, ''));
+          const v = parseFloat(String(row[amtColIdx]).replace(/,/g, ''));
           return s + (isNaN(v) ? 0 : v);
         }, 0)
       : null;
