@@ -42,6 +42,19 @@ document.addEventListener('DOMContentLoaded', () => {
   id('loginScreen').style.display = 'none';
   id('appShell').style.display = 'none';
 
+  window.addEventListener('popstate', () => {
+    if (!State.token) return;
+    history.pushState({ appPage: State.page }, '');
+    const target = State.prevPage || 'dashboard';
+    if (target === 'detail') {
+      const woId = localStorage.getItem('lastWoId');
+      if (woId) openWoDetail(parseInt(woId, 10));
+      else navigateTo('dashboard');
+    } else {
+      navigateTo(target);
+    }
+  });
+
   const saved = localStorage.getItem('authToken');
   const savedUser = localStorage.getItem('authUser');
   if (saved && savedUser) {
@@ -314,7 +327,10 @@ function bindNav() {
 
 function navigateTo(page) {
   _focusedRowIndex = -1;
-  if (State.page !== page) State.prevPage = State.page;
+  if (State.page !== page) {
+    State.prevPage = State.page;
+    history.pushState({ appPage: page }, '');
+  }
   State.page = page;
   localStorage.setItem('lastPage', page);
   if (page !== 'detail') {
