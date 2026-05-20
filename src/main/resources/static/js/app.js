@@ -254,8 +254,20 @@ function showLoginScreen() {
 }
 
 function logout() {
-  if (!confirm('Are you sure you want to sign out?')) return;
-  forceLogout();
+  showModal('Sign Out', `
+    <div style="text-align:center;padding:8px 0 4px">
+      <div style="font-size:2rem;margin-bottom:12px">👋</div>
+      <p style="margin:0;font-size:.95rem;color:var(--text)">Are you sure you want to sign out?</p>
+    </div>`,
+    [
+      { label: 'Sign Out', cls: 'btn-danger', id: 'confirmLogoutBtn' },
+      { label: 'Cancel',   cls: 'btn-outline', close: true }
+    ]
+  );
+  id('confirmLogoutBtn')?.addEventListener('click', () => {
+    closeModal();
+    forceLogout();
+  });
 }
 
 function forceLogout() {
