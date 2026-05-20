@@ -2507,7 +2507,7 @@ async function viewExcelInvoice(fileId, fileName) {
     { wide: true }
   );
 
-  let invoiceRows = [], colLabels = [];
+  let invoiceRows = [], colLabels = [], excelTotalRow = null, amtColIdx = -1;
 
   try {
     const res = await fetch(`/api/files/download/${fileId}?token=${State.token}`);
@@ -2534,10 +2534,9 @@ async function viewExcelInvoice(fileId, fileName) {
     colLabels = presentKeys.map(k => targets_labels[k]);
     // Same as renderExcelSheet: skip hidden rows
     const rowHidden = ws['!rows'] || [];
-    const amtColIdx = presentKeys.indexOf('despAmt');
+    amtColIdx = presentKeys.indexOf('despAmt');
 
     // Collect rows — same hidden-row logic as View; additionally filter by despAmt
-    let excelTotalRow = null; // the Excel's own subtotal/total row
     for (let r = dataStartRow; r <= range.e.r; r++) {
       if (rowHidden[r]?.hidden) continue;
       const vals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
