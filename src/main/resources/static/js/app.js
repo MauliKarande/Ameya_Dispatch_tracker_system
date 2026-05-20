@@ -2155,7 +2155,7 @@ function triggerImmediateSync() {
 }
 
 // ── MODAL HELPERS ──────────────────────────────────────────────────
-function showModal(title, bodyHtml, buttons) {
+function showModal(title, bodyHtml, buttons, opts = {}) {
   id('modalTitle').textContent = title;
   id('modalBody').innerHTML = bodyHtml;
   id('modalFooter').innerHTML = buttons.map(b =>
@@ -2163,6 +2163,8 @@ function showModal(title, bodyHtml, buttons) {
       ? `<button class="btn ${b.cls}" id="modalCancelBtn">${b.label}</button>`
       : `<button class="btn ${b.cls}" id="${b.id}">${b.label}</button>`
   ).join('');
+  const box = id('modal').querySelector('.modal-box');
+  box.classList.toggle('modal-box--wide', !!opts.wide);
   id('modal').style.display = 'flex';
   id('modalClose').onclick = closeModal;
   id('modalCancelBtn')?.addEventListener('click', closeModal);
@@ -2421,7 +2423,15 @@ function _findInvoiceColumns(ws, range) {
       }
     }
 
-    if (Object.keys(colMap).length >= 4) return { headerRow: r, colMap };
+    if (Object.keys(colMap).length >= 4) {
+      // If the next row also contains header-like text (split-header case), skip it
+      const nextRowHits = Object.values(colMap).filter(c => {
+        const txt = _getCellText(ws, r + 1, c);
+        return targets.some(t => t.test(txt));
+      }).length;
+      const dataStartRow = (nextRowHits >= 3) ? r + 2 : r + 1;
+      return { headerRow: r, dataStartRow, colMap };
+    }
   }
   return null;
 }
@@ -2433,7 +2443,8 @@ async function viewExcelInvoice(fileId, fileName) {
       { label: '⬇ Export CSV', cls: 'btn-outline', id: 'invExportBtn' },
       { label: '🖨 Print',     cls: 'btn-outline', id: 'invPrintBtn'  },
       { label: 'Close',        cls: 'btn-outline', close: true        },
-    ]
+    ],
+    { wide: true }
   );
 
   let invoiceRows = [], colLabels = [];
@@ -2451,19 +2462,17 @@ async function viewExcelInvoice(fileId, fileName) {
       return;
     }
 
-    const { headerRow, colMap } = found;
+    const { dataStartRow, colMap } = found;
     const ORDER = ['po','customer','sr','part','qty','rate','despQty','despAmt'];
     const presentKeys = ORDER.filter(k => k in colMap);
     colLabels = presentKeys.map(k => targets_labels[k]);
 
-    // Collect data rows (skip rows where despAmt is '-' / blank / zero)
-    for (let r = headerRow + 1; r <= range.e.r; r++) {
+    // Collect data rows — skip rows where despAmt is '-' / blank / zero
+    for (let r = dataStartRow; r <= range.e.r; r++) {
       const vals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
-      // Check despAmt value
       const amtIdx = presentKeys.indexOf('despAmt');
       const amtVal = amtIdx >= 0 ? vals[amtIdx].trim() : '';
       if (!amtVal || amtVal === '-' || amtVal === '0') continue;
-      // Skip fully empty rows
       if (vals.every(v => !v)) continue;
       invoiceRows.push(vals);
     }
@@ -2474,14 +2483,55 @@ async function viewExcelInvoice(fileId, fileName) {
     }
 
     const thead = `<tr>${colLabels.map(l => `<th>${esc(l)}</th>`).join('')}</tr>`;
-    const tbody = invoiceRows.map(row =>
-      `<tr>${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`
+    const tbody = invoiceRows.map((row, i) =>
+      `<tr data-inv-row="${i}">${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`
     ).join('');
 
     id('invViewBody').innerHTML = `
-      <div style="overflow:auto;max-height:420px">
-        <table class="inv-view-table">${thead}${tbody}</table>
+      <div style="font-size:.73rem;color:var(--text3);margin-bottom:8px;line-height:1.6">
+        Click row to select &nbsp;·&nbsp;
+        <kbd class="inv-kbd">↑↓</kbd> navigate &nbsp;·&nbsp;
+        <kbd class="inv-kbd">R</kbd> mark red (PO missing) &nbsp;·&nbsp;
+        <kbd class="inv-kbd">Space</kbd> mark verified ✓
+      </div>
+      <div id="invTableWrap" style="overflow-y:auto;max-height:54vh" tabindex="0">
+        <table class="inv-view-table">
+          <thead>${thead}</thead>
+          <tbody>${tbody}</tbody>
+        </table>
       </div>`;
+
+    // Row selection & keyboard navigation
+    const wrap = id('invTableWrap');
+    const trows = Array.from(wrap.querySelectorAll('tr[data-inv-row]'));
+    let selIdx = -1;
+
+    function invSelect(idx) {
+      trows.forEach((r, i) => r.classList.toggle('inv-selected', i === idx));
+      selIdx = idx;
+      if (idx >= 0) trows[idx].scrollIntoView({ block: 'nearest' });
+    }
+
+    trows.forEach((tr, i) => tr.addEventListener('click', () => invSelect(i)));
+
+    wrap.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        invSelect(selIdx < 0 ? 0 : Math.min(selIdx + 1, trows.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        invSelect(Math.max(selIdx - 1, 0));
+      } else if ((e.key === 'r' || e.key === 'R') && selIdx >= 0) {
+        trows[selIdx].classList.remove('inv-green');
+        trows[selIdx].classList.toggle('inv-red');
+      } else if (e.key === ' ' && selIdx >= 0) {
+        e.preventDefault();
+        trows[selIdx].classList.remove('inv-red');
+        trows[selIdx].classList.toggle('inv-green');
+      }
+    });
+
+    wrap.focus();
 
   } catch (e) {
     id('invViewBody').innerHTML = `<div style="color:var(--red,#e53e3e);padding:16px">Error: ${esc(e.message)}</div>`;

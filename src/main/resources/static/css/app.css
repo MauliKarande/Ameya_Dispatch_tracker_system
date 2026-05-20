@@ -782,28 +782,46 @@ height: 100px;
 }
 .excel-sheet-tab:hover:not(.active) { background: var(--surface2); }
 
-/* Invoice View table (modal) */
+/* Wide modal variant (Invoice View) */
+.modal-box--wide { max-width: 96vw; }
+.modal-box--wide .modal-body { padding: 16px 20px; }
+
+/* Keyboard hint pill */
+.inv-kbd {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 3px; padding: 1px 5px; font-size: .72rem; font-family: monospace;
+}
+
+/* Invoice View table */
 .inv-view-table {
   border-collapse: collapse;
-  font-size: .82rem;
-  white-space: nowrap;
+  font-size: .78rem;
   width: 100%;
 }
 .inv-view-table th,
 .inv-view-table td {
   border: 1px solid var(--border);
-  padding: 6px 12px;
+  padding: 5px 10px;
   color: var(--text);
   background: var(--surface);
 }
 .inv-view-table th {
   background: var(--surface2);
   font-weight: 600;
+  white-space: nowrap;
   position: sticky;
   top: 0;
   z-index: 1;
 }
+.inv-view-table tr { cursor: pointer; }
 .inv-view-table tr:nth-child(even) td { background: var(--surface2); }
+
+/* Row states */
+.inv-view-table tr.inv-selected td                   { background: rgba(66,153,225,.22) !important; }
+.inv-view-table tr.inv-red td                        { background: rgba(229,62,62,.18)  !important; }
+.inv-view-table tr.inv-red.inv-selected td           { background: rgba(229,62,62,.40)  !important; }
+.inv-view-table tr.inv-green td                      { background: rgba(56,161,105,.18) !important; }
+.inv-view-table tr.inv-green.inv-selected td         { background: rgba(56,161,105,.40) !important; }
 
 /* ── DISPATCH CARD (mobile only) ─────────────────────────────────*/
 .wo-cards { display:none; flex-direction:column; gap:10px; }
