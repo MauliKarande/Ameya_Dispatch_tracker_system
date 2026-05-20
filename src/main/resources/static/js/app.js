@@ -1015,12 +1015,9 @@ function renderWoDetail(wo) {
       </div>
     </div>
 
-    <!-- Activity Log -->
-    <div class="detail-section" style="margin-top:16px">
-      <div class="detail-section-header">Activity Log</div>
-      <div class="detail-section-body">
-        ${renderActivityLog(wo.activityLogs)}
-      </div>
+    <!-- Logs Button -->
+    <div style="margin-top:20px;text-align:center">
+      <button class="btn btn-outline" id="viewLogsBtn">📋 View Logs</button>
     </div>
   `;
   id('woDetailContent').innerHTML = html;
@@ -1221,6 +1218,21 @@ function renderActivityLog(logs) {
     </div>`).join('')}</div>`;
 }
 
+function showLogsModal(wo) {
+  const logs = wo.activityLogs || [];
+  const rows = logs.length
+    ? logs.map(l => `
+        <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="font-size:.85rem;color:var(--text1)">${esc(l.action)}</div>
+          <div style="font-size:.75rem;color:var(--text3);margin-top:3px">${esc(l.formattedTimestamp)}</div>
+        </div>`).join('')
+    : '<div style="color:var(--text3);font-size:.83rem;padding:12px 0">No activity yet</div>';
+
+  showModal(`Logs — ${wo.woNumber}`, `
+    <div style="max-height:420px;overflow-y:auto;padding-right:4px">${rows}</div>
+  `, [{ label: 'Close', cls: 'btn-outline', close: true }]);
+}
+
 function bindDetailActions(wo) {
   // Stock
   id('stockDoneBtn')?.addEventListener('click', async () => {
@@ -1287,6 +1299,9 @@ function bindDetailActions(wo) {
 
   // Dispatch Info edit
   id('editDetailsBtn')?.addEventListener('click', () => showEditDetailsModal(wo));
+
+  // Logs
+  id('viewLogsBtn')?.addEventListener('click', () => showLogsModal(wo));
 
   // Notes & Issues
   id('editNoteBtn')?.addEventListener('click', () => showNoteModal(wo));
