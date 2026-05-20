@@ -2668,19 +2668,29 @@ async function viewExcelInvoice(fileId, fileName) {
 
   // Print
   id('invPrintBtn')?.addEventListener('click', () => {
+    const wo = State.currentWo || {};
+    const dlHeader = wo.woNumber
+      ? `<div style="font-size:15px;font-weight:700;margin-bottom:2px">${esc(wo.woNumber)}</div>
+         <div style="font-size:12px;color:#555;margin-bottom:14px">${esc(wo.customerName || '')}${wo.shipmentMode ? ' — ' + esc(wo.shipmentMode) : ''}</div>`
+      : '';
+    const totalRowHtml = excelTotalRow
+      ? `<tr style="font-weight:700;background:#f0f0f0;border-top:2px solid #999">
+           ${excelTotalRow.map((v, i) => `<td>${i === 0 ? 'TOTAL' : i === amtColIdx ? esc(v) : ''}</td>`).join('')}
+         </tr>`
+      : '';
     const win = window.open('', '_blank');
-    win.document.write(`<!DOCTYPE html><html><head><title>${fileName} — Invoice</title>
+    win.document.write(`<!DOCTYPE html><html><head><title>${esc(wo.woNumber || fileName)} — Invoice</title>
       <style>
         body { font-family: Arial, sans-serif; font-size: 12px; margin: 20px; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; }
         th { background: #f0f0f0; font-weight: bold; }
-        tr:nth-child(even) { background: #fafafa; }
+        tr:nth-child(even) td { background: #fafafa; }
         @media print { body { margin: 10px; } }
       </style></head><body>
-      <h3 style="margin-bottom:12px">${esc(fileName)} — Invoice</h3>
+      ${dlHeader}
       <table><thead><tr>${colLabels.map(l => `<th>${esc(l)}</th>`).join('')}</tr></thead>
-      <tbody>${invoiceRows.map(row => `<tr>${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+      <tbody>${invoiceRows.map(row => `<tr>${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}${totalRowHtml}</tbody>
       </table></body></html>`);
     win.document.close();
     win.focus();
