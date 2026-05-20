@@ -87,6 +87,17 @@ public class FileController {
         }
     }
 
+    @PatchMapping("/{fileId}/amount-total")
+    public ResponseEntity<ApiResponse<Void>> saveAmountTotal(
+            @PathVariable Long fileId,
+            @RequestParam Double value) {
+        FileStorage fs = fileStorageRepository.findById(fileId)
+            .orElseThrow(() -> new ResourceNotFoundException("File not found: " + fileId));
+        fs.setAmountTotal(value);
+        fileStorageRepository.save(fs);
+        return ResponseEntity.ok(ApiResponse.ok("Amount total saved", null));
+    }
+
     @DeleteMapping("/{fileId}")
     @PreAuthorize("hasRole('INVOICE_CREATOR')")
     public ResponseEntity<ApiResponse<Void>> deleteInvoicePdf(

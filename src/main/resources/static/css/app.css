@@ -822,6 +822,7 @@ height: 100px;
 .inv-view-table tr.inv-red.inv-selected td           { background: rgba(229,62,62,.40)  !important; }
 .inv-view-table tr.inv-green td                      { background: rgba(56,161,105,.18) !important; }
 .inv-view-table tr.inv-green.inv-selected td         { background: rgba(56,161,105,.40) !important; }
+.inv-view-table tr.inv-total-row td                  { background: var(--surface2) !important; border-top: 2px solid var(--border); font-weight: 600; }
 
 /* ── DISPATCH CARD (mobile only) ─────────────────────────────────*/
 .wo-cards { display:none; flex-direction:column; gap:10px; }

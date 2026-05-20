@@ -2537,14 +2537,15 @@ async function viewExcelInvoice(fileId, fileName) {
     const amtColIdx = presentKeys.indexOf('despAmt');
 
     // Collect rows — same hidden-row logic as View; additionally filter by despAmt
+    let excelTotalRow = null; // the Excel's own subtotal/total row
     for (let r = dataStartRow; r <= range.e.r; r++) {
       if (rowHidden[r]?.hidden) continue;
       const vals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
       // Use _isDash to handle hyphen, en-dash, em-dash, Unicode minus, empty
       const amtVal = amtColIdx >= 0 ? vals[amtColIdx] : '';
       if (_isDash(amtVal) || amtVal === '0') continue;
-      // Skip subtotal/total rows: they have only DESP. AMT. filled, rest empty
-      if (vals.filter(v => v).length < 2) continue;
+      // Subtotal/total row: only DESP. AMT. filled — keep the last one to show at bottom
+      if (vals.filter(v => v).length < 2) { excelTotalRow = vals; continue; }
       invoiceRows.push(vals);
     }
 
@@ -2557,6 +2558,13 @@ async function viewExcelInvoice(fileId, fileName) {
     const tbody = invoiceRows.map((row, i) =>
       `<tr data-inv-row="${i}">${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`
     ).join('');
+
+    // Total row from the Excel sheet shown at bottom (styled separately)
+    const totalTr = excelTotalRow
+      ? `<tr class="inv-total-row">${excelTotalRow.map((v, i) =>
+          `<td>${i === 0 ? 'TOTAL' : i === amtColIdx ? `<strong>${esc(v)}</strong>` : ''}</td>`
+        ).join('')}</tr>`
+      : '';
 
     const grandTotal = amtColIdx >= 0
       ? invoiceRows.reduce((s, row) => {
@@ -2581,7 +2589,7 @@ async function viewExcelInvoice(fileId, fileName) {
       <div id="invTableWrap" style="overflow-y:auto;max-height:54vh" tabindex="0">
         <table class="inv-view-table">
           <thead>${thead}</thead>
-          <tbody>${tbody}</tbody>
+          <tbody>${tbody}${totalTr}</tbody>
         </table>
       </div>`;
 
@@ -2616,6 +2624,30 @@ async function viewExcelInvoice(fileId, fileName) {
     });
 
     wrap.focus();
+
+    // Auto-save total to DB if not already saved (covers existing files uploaded before this feature)
+    if (grandTotal != null) {
+      const woFile = State.currentWo?.excelFiles?.find(f => f.id === fileId);
+      if (woFile && woFile.amountTotal == null) {
+        fetch(`/api/files/${fileId}/amount-total?value=${grandTotal}`, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${State.token}` }
+        }).then(r => {
+          if (r.ok) {
+            woFile.amountTotal = grandTotal;
+            const totalFmt = grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            // Update file-meta in DL details in-place (no full re-render needed)
+            document.querySelectorAll(`[data-fid="${fileId}"]`).forEach(btn => {
+              const meta = btn.closest('.file-item')?.querySelector('.file-meta');
+              if (meta && !meta.querySelector('.inv-total-label')) {
+                meta.insertAdjacentHTML('beforeend',
+                  ` &nbsp;·&nbsp; <span class="inv-total-label" style="color:var(--green,#38a169);font-weight:600">${totalFmt}</span>`);
+              }
+            });
+          }
+        }).catch(() => {});
+      }
+    }
 
   } catch (e) {
     id('invViewBody').innerHTML = `<div style="color:var(--red,#e53e3e);padding:16px">Error: ${esc(e.message)}</div>`;
