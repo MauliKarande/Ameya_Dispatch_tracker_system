@@ -782,6 +782,29 @@ height: 100px;
 }
 .excel-sheet-tab:hover:not(.active) { background: var(--surface2); }
 
+/* Invoice View table (modal) */
+.inv-view-table {
+  border-collapse: collapse;
+  font-size: .82rem;
+  white-space: nowrap;
+  width: 100%;
+}
+.inv-view-table th,
+.inv-view-table td {
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+.inv-view-table th {
+  background: var(--surface2);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.inv-view-table tr:nth-child(even) td { background: var(--surface2); }
+
 /* ── DISPATCH CARD (mobile only) ─────────────────────────────────*/
 .wo-cards { display:none; flex-direction:column; gap:10px; }
 .wo-card {

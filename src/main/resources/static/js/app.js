@@ -1183,6 +1183,9 @@ function renderFileSection(title, files, downloadPrefix = null) {
         const isExcel = /\.(xlsx?|csv)$/i.test(name);
         const isPdf = /\.pdf$/i.test(name);
         const isInvoicePdf = title === 'Invoice PDFs' && isPdf;
+        const invoiceViewBtn = (isExcel && title === 'Excel Files')
+          ? `<button class="btn btn-outline btn-xs" data-fid="${f.id}" data-fname="${esc(name)}" onclick="viewExcelInvoice(+this.dataset.fid, this.dataset.fname)">📄 Invoice View</button>`
+          : '';
         const viewBtn = isPdf
           ? `<a href="${f.downloadUrl.replace('/download/','/view/')}?token=${State.token}" target="_blank" class="btn btn-outline btn-xs">👁 View</a>`
           : isExcel
@@ -1200,6 +1203,7 @@ function renderFileSection(title, files, downloadPrefix = null) {
           <div><div class="file-name">${esc(name)}</div><div class="file-meta">v${f.version} · ${f.uploadedBy||''}</div></div>
           <div style="display:flex;gap:4px;flex-wrap:wrap">
             ${viewBtn}
+            ${invoiceViewBtn}
             ${dlBtn}
             ${deleteBtn}
           </div>
@@ -2383,6 +2387,146 @@ function closeExcelViewer() {
   id('excelViewerModal').style.display = 'none';
   _excelWorkbook = null;
 }
+
+// ── INVOICE VIEW ────────────────────────────────────────────────────
+function _getCellText(ws, r, c) {
+  const cell = ws[XLSX.utils.encode_cell({ r, c })];
+  if (!cell) return '';
+  return (cell.w !== undefined ? cell.w : cell.v !== undefined ? String(cell.v) : '').trim();
+}
+
+function _findInvoiceColumns(ws, range) {
+  const targets = [
+    { key: 'po',       label: 'P.O.NO.',       test: v => /p\.?\s*o/i.test(v) },
+    { key: 'customer', label: 'CUSTOMER',       test: v => /cust/i.test(v) },
+    { key: 'sr',       label: 'SR. NO.',        test: v => /\bsr\b/i.test(v) },
+    { key: 'part',     label: 'PART NO.',       test: v => /part/i.test(v) },
+    { key: 'qty',      label: 'QTY.',           test: v => /qty|quantity/i.test(v) && !/desp/i.test(v) },
+    { key: 'rate',     label: 'RATE PER Pc.',   test: v => /rate/i.test(v) },
+    { key: 'despQty',  label: 'DESP. QTY.',     test: v => /desp/i.test(v) && /qt/i.test(v) && !/amt/i.test(v) },
+    { key: 'despAmt',  label: 'DESP. AMT.',     test: v => /desp/i.test(v) && /amt/i.test(v) },
+  ];
+
+  for (let r = range.s.r; r <= Math.min(range.s.r + 20, range.e.r); r++) {
+    // Combine text from current row + next row per column to handle split headers
+    const colText = {};
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      colText[c] = (_getCellText(ws, r, c) + ' ' + _getCellText(ws, r + 1, c)).trim();
+    }
+
+    const colMap = {};
+    for (const t of targets) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        if (t.test(colText[c]) && !(t.key in colMap)) { colMap[t.key] = c; break; }
+      }
+    }
+
+    if (Object.keys(colMap).length >= 4) return { headerRow: r, colMap };
+  }
+  return null;
+}
+
+async function viewExcelInvoice(fileId, fileName) {
+  showModal('Invoice View — ' + fileName,
+    `<div id="invViewBody" style="text-align:center;padding:20px;color:var(--text3)">Loading…</div>`,
+    [
+      { label: '⬇ Export CSV', cls: 'btn-outline', id: 'invExportBtn' },
+      { label: '🖨 Print',     cls: 'btn-outline', id: 'invPrintBtn'  },
+      { label: 'Close',        cls: 'btn-outline', close: true        },
+    ]
+  );
+
+  let invoiceRows = [], colLabels = [];
+
+  try {
+    const res = await fetch(`/api/files/download/${fileId}?token=${State.token}`);
+    if (!res.ok) throw new Error('Failed to fetch file');
+    const wb = XLSX.read(await res.arrayBuffer(), { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const found = _findInvoiceColumns(ws, range);
+
+    if (!found) {
+      id('invViewBody').innerHTML = '<div style="color:var(--red,#e53e3e);padding:16px">Could not detect required columns (P.O.NO., CUSTOMER, PART NO., DESP. AMT., etc.) in this file.</div>';
+      return;
+    }
+
+    const { headerRow, colMap } = found;
+    const ORDER = ['po','customer','sr','part','qty','rate','despQty','despAmt'];
+    const presentKeys = ORDER.filter(k => k in colMap);
+    colLabels = presentKeys.map(k => targets_labels[k]);
+
+    // Collect data rows (skip rows where despAmt is '-' / blank / zero)
+    for (let r = headerRow + 1; r <= range.e.r; r++) {
+      const vals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
+      // Check despAmt value
+      const amtIdx = presentKeys.indexOf('despAmt');
+      const amtVal = amtIdx >= 0 ? vals[amtIdx].trim() : '';
+      if (!amtVal || amtVal === '-' || amtVal === '0') continue;
+      // Skip fully empty rows
+      if (vals.every(v => !v)) continue;
+      invoiceRows.push(vals);
+    }
+
+    if (!invoiceRows.length) {
+      id('invViewBody').innerHTML = '<div style="color:var(--text3);padding:16px">No invoice rows found (all DESP. AMT. are empty or —).</div>';
+      return;
+    }
+
+    const thead = `<tr>${colLabels.map(l => `<th>${esc(l)}</th>`).join('')}</tr>`;
+    const tbody = invoiceRows.map(row =>
+      `<tr>${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`
+    ).join('');
+
+    id('invViewBody').innerHTML = `
+      <div style="overflow:auto;max-height:420px">
+        <table class="inv-view-table">${thead}${tbody}</table>
+      </div>`;
+
+  } catch (e) {
+    id('invViewBody').innerHTML = `<div style="color:var(--red,#e53e3e);padding:16px">Error: ${esc(e.message)}</div>`;
+    return;
+  }
+
+  // Export CSV
+  id('invExportBtn')?.addEventListener('click', () => {
+    const bom = '﻿';
+    const csv = bom + [colLabels, ...invoiceRows]
+      .map(row => row.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(','))
+      .join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = fileName.replace(/\.[^.]+$/, '') + '_invoice.csv';
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  // Print
+  id('invPrintBtn')?.addEventListener('click', () => {
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><title>${fileName} — Invoice</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; }
+        th { background: #f0f0f0; font-weight: bold; }
+        tr:nth-child(even) { background: #fafafa; }
+        @media print { body { margin: 10px; } }
+      </style></head><body>
+      <h3 style="margin-bottom:12px">${esc(fileName)} — Invoice</h3>
+      <table><thead><tr>${colLabels.map(l => `<th>${esc(l)}</th>`).join('')}</tr></thead>
+      <tbody>${invoiceRows.map(row => `<tr>${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></body></html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  });
+}
+
+// Column labels lookup used inside viewExcelInvoice
+const targets_labels = {
+  po: 'P.O.NO.', customer: 'CUSTOMER', sr: 'SR. NO.', part: 'PART NO.',
+  qty: 'QTY.', rate: 'RATE PER Pc.', despQty: 'DESP. QTY.', despAmt: 'DESP. AMT.'
+};
 // Close on backdrop click
 document.addEventListener('DOMContentLoaded', () => {
   id('excelViewerModal')?.addEventListener('click', e => {
