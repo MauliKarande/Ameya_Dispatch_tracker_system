@@ -919,9 +919,11 @@ async function submitCreateWo() {
   btn.disabled = true; btn.textContent = 'Creating…';
 
   try {
+    const amountTotal = await _calcExcelInvoiceTotal(excelFile);
     const formData = new FormData();
     formData.append('data', new Blob([JSON.stringify({ customerName, shipmentMode, invoiceType, woDate })], { type:'application/json' }));
     formData.append('excelFile', excelFile);
+    if (amountTotal != null) formData.append('amountTotal', amountTotal);
     const res = await apiFormData('/api/workorders', formData);
     showToast('Dispatch created: ' + res.data.woNumber, 'success');
     triggerImmediateSync();
@@ -1199,8 +1201,11 @@ function renderFileSection(title, files, downloadPrefix = null) {
         const dlBtn = (isExcel && downloadPrefix)
           ? `<button class="btn btn-outline btn-xs" data-fid="${f.id}" data-fname="${esc(downloadPrefix + ext)}" onclick="downloadFileAs(+this.dataset.fid, this.dataset.fname)">↓ Download</button>`
           : `<a href="${f.downloadUrl}?token=${State.token}" class="btn btn-outline btn-xs">↓ Download</a>`;
+        const totalLabel = (isExcel && f.amountTotal != null)
+          ? ` &nbsp;·&nbsp; <span style="color:var(--green,#38a169);font-weight:600">${Number(f.amountTotal).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`
+          : '';
         return `<div class="file-item">
-          <div><div class="file-name">${esc(name)}</div><div class="file-meta">v${f.version} · ${f.uploadedBy||''}</div></div>
+          <div><div class="file-name">${esc(name)}</div><div class="file-meta">v${f.version} · ${f.uploadedBy||''}${totalLabel}</div></div>
           <div style="display:flex;gap:4px;flex-wrap:wrap">
             ${viewBtn}
             ${invoiceViewBtn}
@@ -1625,9 +1630,11 @@ function showRevisionModal(wo) {
     const btn = id('submitRevBtn');
     btn.disabled = true; btn.textContent = 'Uploading…';
     try {
+      const amountTotal = await _calcExcelInvoiceTotal(file);
       const formData = new FormData();
       formData.append('file', file);
       formData.append('revisionReason', reason);
+      if (amountTotal != null) formData.append('amountTotal', amountTotal);
       const res = await apiFormData(`/api/workorders/${wo.id}/excel`, formData, 'POST');
       State.currentWo = res.data;
       renderWoDetail(res.data);
@@ -2436,6 +2443,31 @@ function _findInvoiceColumns(ws, range) {
   return null;
 }
 
+// Parse an Excel File object and return the DESP. AMT. total for visible invoice rows.
+// Returns a number (possibly 0) or null if columns can't be detected.
+async function _calcExcelInvoiceTotal(file) {
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    if (!ws || !ws['!ref']) return null;
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const found = _findInvoiceColumns(ws, range);
+    if (!found || !('despAmt' in found.colMap)) return null;
+    const { dataStartRow, colMap } = found;
+    const rowHidden = ws['!rows'] || [];
+    let total = 0;
+    for (let r = dataStartRow; r <= range.e.r; r++) {
+      if (rowHidden[r]?.hidden) continue;
+      const amtStr = _getCellText(ws, r, colMap.despAmt).trim();
+      if (!amtStr || amtStr === '-' || amtStr === '0') continue;
+      const val = parseFloat(amtStr.replace(/,/g, ''));
+      if (!isNaN(val)) total += val;
+    }
+    return Math.round(total * 100) / 100;
+  } catch { return null; }
+}
+
 async function viewExcelInvoice(fileId, fileName) {
   showModal('Invoice View — ' + fileName,
     `<div id="invViewBody" style="text-align:center;padding:20px;color:var(--text3)">Loading…</div>`,
@@ -2466,9 +2498,11 @@ async function viewExcelInvoice(fileId, fileName) {
     const ORDER = ['po','customer','sr','part','qty','rate','despQty','despAmt'];
     const presentKeys = ORDER.filter(k => k in colMap);
     colLabels = presentKeys.map(k => targets_labels[k]);
+    const rowHidden = ws['!rows'] || [];
 
-    // Collect data rows — skip rows where despAmt is '-' / blank / zero
+    // Collect data rows — skip hidden Excel rows and rows where despAmt is '-' / blank / zero
     for (let r = dataStartRow; r <= range.e.r; r++) {
+      if (rowHidden[r]?.hidden) continue;
       const vals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
       const amtIdx = presentKeys.indexOf('despAmt');
       const amtVal = amtIdx >= 0 ? vals[amtIdx].trim() : '';
@@ -2487,7 +2521,21 @@ async function viewExcelInvoice(fileId, fileName) {
       `<tr data-inv-row="${i}">${row.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`
     ).join('');
 
+    const amtIdx = presentKeys.indexOf('despAmt');
+    const grandTotal = amtIdx >= 0
+      ? invoiceRows.reduce((s, row) => {
+          const v = parseFloat(String(row[amtIdx]).replace(/,/g, ''));
+          return s + (isNaN(v) ? 0 : v);
+        }, 0)
+      : null;
+    const totalBadge = grandTotal !== null
+      ? `<div style="text-align:right;font-size:.85rem;font-weight:700;margin-bottom:8px;color:var(--text)">
+           Total DESP. AMT.: <span style="color:var(--green,#38a169)">${grandTotal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+         </div>`
+      : '';
+
     id('invViewBody').innerHTML = `
+      ${totalBadge}
       <div style="font-size:.73rem;color:var(--text3);margin-bottom:8px;line-height:1.6">
         Click row to select &nbsp;·&nbsp;
         <kbd class="inv-kbd">↑↓</kbd> navigate &nbsp;·&nbsp;

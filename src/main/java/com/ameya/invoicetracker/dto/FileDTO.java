@@ -11,4 +11,5 @@ public class FileDTO {
     private String uploadedBy;
     private String remarks;
     private String downloadUrl;
+    private Double amountTotal;
 }

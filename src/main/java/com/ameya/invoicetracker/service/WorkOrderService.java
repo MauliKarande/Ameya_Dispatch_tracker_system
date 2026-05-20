@@ -5,13 +5,13 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 public interface WorkOrderService {
-    WorkOrderDetailDTO createWorkOrder(WorkOrderCreateRequest request, MultipartFile excelFile, String username);
+    WorkOrderDetailDTO createWorkOrder(WorkOrderCreateRequest request, MultipartFile excelFile, String username, Double amountTotal);
     WorkOrderDetailDTO getWorkOrderById(Long id);
     WorkOrderDetailDTO getWorkOrderByWoNumber(String woNumber);
     List<WorkOrderSummaryDTO> getAllWorkOrders();
     List<WorkOrderSummaryDTO> searchWorkOrders(SearchRequest request);
     WorkOrderDetailDTO updateWorkOrderDetails(Long id, WorkOrderEditRequest req, String username);
-    WorkOrderDetailDTO uploadNewExcel(Long id, MultipartFile excelFile, String revisionReason, String username);
+    WorkOrderDetailDTO uploadNewExcel(Long id, MultipartFile excelFile, String revisionReason, String username, Double amountTotal);
     WorkOrderDetailDTO updateStockStatus(Long id, String action, String username);
     WorkOrderDetailDTO savePackagingDetails(Long id, PackagingRequest request, String username);
     WorkOrderDetailDTO revertPackagingStatus(Long id, String username);

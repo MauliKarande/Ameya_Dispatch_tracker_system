@@ -57,9 +57,10 @@ public class WorkOrderController {
     public ResponseEntity<ApiResponse<WorkOrderDetailDTO>> create(
             @Valid @RequestPart("data") WorkOrderCreateRequest req,
             @RequestPart(value = "excelFile", required = false) MultipartFile excelFile,
+            @RequestParam(value = "amountTotal", required = false) Double amountTotal,
             @AuthenticationPrincipal UserDetails ud) {
         return ResponseEntity.ok(ApiResponse.ok("Dispatch created",
-            workOrderService.createWorkOrder(req, excelFile, ud.getUsername())));
+            workOrderService.createWorkOrder(req, excelFile, ud.getUsername(), amountTotal)));
     }
 
     @PutMapping("/{id}/details")
@@ -78,9 +79,10 @@ public class WorkOrderController {
             @PathVariable Long id,
             @RequestParam("file") MultipartFile file,
             @RequestParam("revisionReason") String revisionReason,
+            @RequestParam(value = "amountTotal", required = false) Double amountTotal,
             @AuthenticationPrincipal UserDetails ud) {
         return ResponseEntity.ok(ApiResponse.ok("Excel revision uploaded",
-            workOrderService.uploadNewExcel(id, file, revisionReason, ud.getUsername())));
+            workOrderService.uploadNewExcel(id, file, revisionReason, ud.getUsername(), amountTotal)));
     }
 
     @PatchMapping("/{id}/stock")

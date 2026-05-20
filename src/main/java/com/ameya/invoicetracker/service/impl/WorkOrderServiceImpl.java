@@ -34,7 +34,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
 
     // ── CREATE ──────────────────────────────────────────────
     @Override
-    public WorkOrderDetailDTO createWorkOrder(WorkOrderCreateRequest req, MultipartFile excelFile, String username) {
+    public WorkOrderDetailDTO createWorkOrder(WorkOrderCreateRequest req, MultipartFile excelFile, String username, Double amountTotal) {
         String woNumber = generateWoNumber();
         User user = getUser(username);
         WorkOrder wo = WorkOrder.builder()
@@ -51,7 +51,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
             .createdBy(user.getFullName()).build();
         workOrderRepository.save(wo);
         if (excelFile != null && !excelFile.isEmpty())
-            saveFile(wo, excelFile, FileStorage.FileType.EXCEL, 1, username, user.getFullName());
+            saveFile(wo, excelFile, FileStorage.FileType.EXCEL, 1, username, user.getFullName(), amountTotal);
         logActivity(wo, username, user.getFullName(),
             "Dispatch " + woNumber + " created for customer: " + req.getCustomerName(),
             ActivityLog.ActionType.WO_CREATED);
@@ -121,7 +121,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
 
     // ── REVISION ─────────────────────────────────────────────
     @Override
-    public WorkOrderDetailDTO uploadNewExcel(Long id, MultipartFile excelFile, String revisionReason, String username) {
+    public WorkOrderDetailDTO uploadNewExcel(Long id, MultipartFile excelFile, String revisionReason, String username, Double amountTotal) {
         WorkOrder wo = findWoOrThrow(id);
         User user = getUser(username);
         if (revisionReason == null || revisionReason.isBlank())
@@ -138,7 +138,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         wo.setCollectionStatus(WorkOrder.StepStatus.PENDING);
         wo.setPackagingDetails(null); wo.setPackingType(null);
         wo.setInvoiceIssue(null);
-        saveFile(wo, excelFile, FileStorage.FileType.EXCEL, newVersion, username, user.getFullName());
+        saveFile(wo, excelFile, FileStorage.FileType.EXCEL, newVersion, username, user.getFullName(), amountTotal);
         workOrderRepository.save(wo);
         logActivity(wo, username, user.getFullName(),
             "Revised to v" + newVersion + ". Reason: " + revisionReason, ActivityLog.ActionType.WO_REVISED);
@@ -221,7 +221,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         if (packingFile == null || packingFile.isEmpty())
             throw new BadRequestException("Please select a file to upload (PDF or Word).");
         int cnt = fileStorageRepository.countByWorkOrderIdAndFileType(wo.getId(), FileStorage.FileType.PACKING);
-        saveFile(wo, packingFile, FileStorage.FileType.PACKING, cnt + 1, username, user.getFullName());
+        saveFile(wo, packingFile, FileStorage.FileType.PACKING, cnt + 1, username, user.getFullName(), null);
         boolean isUpdate = wo.getPackingDetailsStatus() == WorkOrder.StepStatus.DONE;
         wo.setPackingDetailsStatus(WorkOrder.StepStatus.DONE);
         wo.setPackingDetailsUpdatedAt(LocalDateTime.now()); wo.setPackingDetailsUpdatedBy(user.getFullName());
@@ -262,7 +262,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         wo.setInvoiceIssue(null);
         if (pdfFile != null && !pdfFile.isEmpty()) {
             int cnt = fileStorageRepository.countByWorkOrderIdAndFileType(wo.getId(), FileStorage.FileType.PDF);
-            saveFile(wo, pdfFile, FileStorage.FileType.PDF, cnt + 1, username, user.getFullName());
+            saveFile(wo, pdfFile, FileStorage.FileType.PDF, cnt + 1, username, user.getFullName(), null);
         }
         workOrderRepository.save(wo); updateOverallStatus(wo);
         logActivity(wo, username, user.getFullName(),
@@ -295,7 +295,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         WorkOrder wo = findWoOrThrow(id);
         User user = getUser(username);
         int cnt = fileStorageRepository.countByWorkOrderIdAndFileType(wo.getId(), FileStorage.FileType.PDF);
-        saveFile(wo, pdfFile, FileStorage.FileType.PDF, cnt + 1, username, user.getFullName());
+        saveFile(wo, pdfFile, FileStorage.FileType.PDF, cnt + 1, username, user.getFullName(), null);
         logActivity(wo, username, user.getFullName(), "Invoice PDF uploaded (v" + (cnt+1) + ")", ActivityLog.ActionType.INVOICE_FILE_UPLOADED);
         return toDetailDTO(wo);
     }
@@ -427,7 +427,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         return prefix + String.format("%04d", count);
     }
     private void saveFile(WorkOrder wo, MultipartFile file, FileStorage.FileType type,
-                          int version, String username, String fullName) {
+                          int version, String username, String fullName, Double amountTotal) {
         try {
             String dir = switch (type) {
                 case EXCEL -> excelUploadDir;
@@ -443,7 +443,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
             fileStorageRepository.save(FileStorage.builder()
                 .workOrder(wo).fileType(type).originalFileName(orig)
                 .storedFileName(stored).filePath(target.toString())
-                .version(version).uploadedBy(fullName).build());
+                .version(version).uploadedBy(fullName).amountTotal(amountTotal).build());
         } catch (IOException e) {
             throw new BadRequestException("Failed to save file: " + e.getMessage());
         }
@@ -528,7 +528,8 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         return FileDTO.builder().id(fs.getId()).originalFileName(fs.getOriginalFileName())
             .fileType(fs.getFileType().name()).version(fs.getVersion())
             .uploadedAt(fs.getUploadedAt()).uploadedBy(fs.getUploadedBy())
-            .remarks(fs.getRemarks()).downloadUrl("/api/files/download/" + fs.getId()).build();
+            .remarks(fs.getRemarks()).downloadUrl("/api/files/download/" + fs.getId())
+            .amountTotal(fs.getAmountTotal()).build();
     }
     private ActivityLogDTO toLogDTO(ActivityLog l) {
         return ActivityLogDTO.builder().id(l.getId()).username(l.getUsername()).fullName(l.getFullName())

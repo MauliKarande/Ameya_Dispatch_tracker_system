@@ -54,6 +54,9 @@ public class FileStorage {
     @Column
     private LocalDateTime deletedAt;
 
+    @Column
+    private Double amountTotal;
+
     @PrePersist
     protected void onCreate() { uploadedAt = LocalDateTime.now(); }
 
