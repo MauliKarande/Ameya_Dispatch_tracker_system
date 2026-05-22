@@ -69,8 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function validateSessionAndShowApp() {
   showServerConnecting(true);
   let attempts = 0;
-  const maxAttempts = 6;
-  while (attempts < maxAttempts) {
+  while (true) {
     try {
       await api('/api/lookup/customers');
       showServerConnecting(false);
@@ -82,16 +81,10 @@ async function validateSessionAndShowApp() {
         return; // forceLogout() already called inside api()
       }
       attempts++;
-      if (attempts < maxAttempts) {
-        updateConnectingMessage(`Server restarted — reconnecting… (${attempts}/${maxAttempts})`);
-        await new Promise(r => setTimeout(r, 5000));
-      }
+      updateConnectingMessage(`Server restarting — reconnecting… (attempt ${attempts})`);
+      await new Promise(r => setTimeout(r, 5000));
     }
   }
-  showServerConnecting(false);
-  forceLogout();
-  id('loginError').textContent = 'Server could not be reached. Please log in again.';
-  id('loginError').style.display = 'block';
 }
 
 function showServerConnecting(show) {
@@ -433,7 +426,9 @@ function showTableLoading(show) {
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDate(val) {
   if (!val) return '—';
-  const d = new Date(val + 'T00:00:00'); // prevent timezone shift
+  // For date-only strings (no T), append time to prevent timezone shift
+  const s = String(val).includes('T') ? String(val) : String(val) + 'T00:00:00';
+  const d = new Date(s);
   if (isNaN(d)) return val;
   const dd  = String(d.getDate()).padStart(2,'0');
   const mon = MONTHS_SHORT[d.getMonth()];
@@ -1060,7 +1055,7 @@ function renderStockStep(wo, role) {
   const nextDone = wo.packagingStatus === 'DONE';
   const canRevert = canToggle && isDone && !nextDone;
   return `<div class="step-row">
-    <div><div class="step-label">Stock</div><div class="step-sub">${isDone && wo.stockUpdatedBy ? 'By '+wo.stockUpdatedBy : ''}</div></div>
+    <div><div class="step-label">Stock</div><div class="step-sub">${isDone && wo.stockUpdatedBy ? 'By '+wo.stockUpdatedBy+(wo.stockUpdatedAt?' · '+formatDate(wo.stockUpdatedAt):'') : ''}</div></div>
     <div class="step-actions">
       ${stepBadge(wo.stockStatus)}
       ${canToggle && !isDone ? `<button class="btn btn-success btn-xs" id="stockDoneBtn">Mark Done</button>` : ''}
@@ -1078,7 +1073,7 @@ function renderPackingStep(wo, role) {
   return `<div class="step-row">
     <div style="flex:1;min-width:0">
       <div class="step-label">Box Details ${packingTypeLabel ? `<small style="color:var(--text3)">(${packingTypeLabel})</small>` : ''}</div>
-      <div class="step-sub">${isDone && wo.packagingUpdatedBy ? 'By '+wo.packagingUpdatedBy : ''}</div>
+      <div class="step-sub">${isDone && wo.packagingUpdatedBy ? 'By '+wo.packagingUpdatedBy+(wo.packagingUpdatedAt?' · '+formatDate(wo.packagingUpdatedAt):'') : ''}</div>
     </div>
     <div class="step-actions">
       ${stepBadge(wo.packagingStatus)}
@@ -1104,7 +1099,7 @@ function renderPackingDetailsStep(wo, role) {
   return `<div class="step-row">
     <div style="flex:1;min-width:0">
       <div class="step-label">Packing Details <small style="color:var(--text3)">(File Upload)</small></div>
-      <div class="step-sub">${isDone && wo.packingDetailsUpdatedBy ? 'By '+wo.packingDetailsUpdatedBy : !invoiceDone ? 'Waiting for Invoice' : 'Upload packing details file'}</div>
+      <div class="step-sub">${isDone && wo.packingDetailsUpdatedBy ? 'By '+wo.packingDetailsUpdatedBy+(wo.packingDetailsUpdatedAt?' · '+formatDate(wo.packingDetailsUpdatedAt):'') : !invoiceDone ? 'Waiting for Invoice' : 'Upload packing details file'}</div>
       ${fileHtml}
     </div>
     <div class="step-actions">
@@ -1141,7 +1136,7 @@ function renderRFDStep(wo, role) {
   const nextDone = (wo.collectionStatus||'PENDING') === 'DONE';
   const canRevert = canToggle && isDone && !nextDone;
   return `<div class="step-row">
-    <div><div class="step-label">Ready For Dispatch</div><div class="step-sub">${isDone && wo.readyForDispatchUpdatedBy ? 'By '+wo.readyForDispatchUpdatedBy : ''}</div></div>
+    <div><div class="step-label">Ready For Dispatch</div><div class="step-sub">${isDone && wo.readyForDispatchUpdatedBy ? 'By '+wo.readyForDispatchUpdatedBy+(wo.readyForDispatchUpdatedAt?' · '+formatDate(wo.readyForDispatchUpdatedAt):'') : ''}</div></div>
     <div class="step-actions">
       ${stepBadge(wo.readyForDispatchStatus||'PENDING')}
       ${canToggle && !isDone ? `<button class="btn btn-success btn-xs" id="rfdDoneBtn">Mark Done</button>` : ''}
@@ -1155,7 +1150,7 @@ function renderCollectionStep(wo, role) {
   const canToggle = role === 'STORE';
   const canRevert = canToggle && isDone;
   return `<div class="step-row">
-    <div><div class="step-label">Collection</div><div class="step-sub">${isDone && wo.collectionUpdatedBy ? 'By '+wo.collectionUpdatedBy : ''}</div></div>
+    <div><div class="step-label">Collection</div><div class="step-sub">${isDone && wo.collectionUpdatedBy ? 'By '+wo.collectionUpdatedBy+(wo.collectionUpdatedAt?' · '+formatDate(wo.collectionUpdatedAt):'') : ''}</div></div>
     <div class="step-actions">
       ${stepBadge(wo.collectionStatus||'PENDING')}
       ${canToggle && !isDone ? `<button class="btn btn-success btn-xs" id="collectionDoneBtn">Mark Done</button>` : ''}
