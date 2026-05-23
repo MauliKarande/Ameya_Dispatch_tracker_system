@@ -17,6 +17,9 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, Long> {
 
     boolean existsByWoNumber(String woNumber);
 
+    @Query("SELECT MAX(w.woNumber) FROM WorkOrder w WHERE w.woNumber LIKE CONCAT(:prefix, '%')")
+    Optional<String> findMaxWoNumberByPrefix(@Param("prefix") String prefix);
+
     // Default: newest first
     List<WorkOrder> findAllByOrderByCreatedAtDesc();
 

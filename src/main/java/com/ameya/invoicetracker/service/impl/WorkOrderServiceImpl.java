@@ -423,8 +423,12 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     }
     private String generateWoNumber() {
         String prefix = "DL-" + java.time.Year.now().getValue() + "-";
-        long count = workOrderRepository.count() + 1;
-        return prefix + String.format("%04d", count);
+        long next = workOrderRepository.findMaxWoNumberByPrefix(prefix)
+            .map(max -> {
+                try { return Long.parseLong(max.substring(prefix.length())) + 1; }
+                catch (Exception e) { return 1L; }
+            }).orElse(1L);
+        return prefix + String.format("%04d", next);
     }
     private void saveFile(WorkOrder wo, MultipartFile file, FileStorage.FileType type,
                           int version, String username, String fullName, Double amountTotal) {
