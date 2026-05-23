@@ -808,11 +808,16 @@ function renderAllWoContent(list) {
 }
 
 // ── CREATE FORM ─────────────────────────────────────────────────────
+let _createFormBound = false;
 function initCreateForm() {
   resetCreateForm();
-  id('addShipmentModeBtn')?.addEventListener('click', () => showCreateLookupModal('shipment-mode'));
-  id('addInvoiceTypeBtn')?.addEventListener('click', () => showCreateLookupModal('invoice-type'));
-  id('createWoBtn')?.addEventListener('click', submitCreateWo);
+  if (!_createFormBound) {
+    _createFormBound = true;
+    setupFileDrop('excelDropZone', 'woExcelFile', 'excelFileName', ['.xlsx','.xls']);
+    id('addShipmentModeBtn')?.addEventListener('click', () => showCreateLookupModal('shipment-mode'));
+    id('addInvoiceTypeBtn')?.addEventListener('click', () => showCreateLookupModal('invoice-type'));
+    id('createWoBtn')?.addEventListener('click', submitCreateWo);
+  }
 }
 
 function resetCreateForm() {
@@ -846,7 +851,6 @@ function resetCreateForm() {
 
   // Re-setup dropdowns freshly
   setupCustomerDropdown();
-  setupFileDrop('excelDropZone', 'woExcelFile', 'excelFileName', ['.xlsx','.xls']);
 }
 
 function setupCustomerDropdown() {
