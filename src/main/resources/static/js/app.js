@@ -814,8 +814,12 @@ function initCreateForm() {
   if (!_createFormBound) {
     _createFormBound = true;
     setupFileDrop('excelDropZone', 'woExcelFile', 'excelFileName', ['.xlsx','.xls']);
-    id('addShipmentModeBtn')?.addEventListener('click', () => showCreateLookupModal('shipment-mode'));
-    id('addInvoiceTypeBtn')?.addEventListener('click', () => showCreateLookupModal('invoice-type'));
+    id('woShipment')?.addEventListener('change', function() {
+      if (this.value === '__create_new__') { this.value = ''; showCreateLookupModal('shipment-mode'); }
+    });
+    id('woInvoiceType')?.addEventListener('change', function() {
+      if (this.value === '__create_new__') { this.value = 'Commercial'; showCreateLookupModal('invoice-type'); }
+    });
     id('createWoBtn')?.addEventListener('click', submitCreateWo);
   }
 }
@@ -831,8 +835,8 @@ function resetCreateForm() {
   if (list) list.style.display = 'none';
 
   // Reset selects to first/default option
-  populateSelect('woShipment', State.shipmentModes, '');
-  populateSelect('woInvoiceType', State.invoiceTypes, 'Commercial');
+  populateSelect('woShipment', State.shipmentModes, '', 'Create New Shipment Mode');
+  populateSelect('woInvoiceType', State.invoiceTypes, 'Commercial', 'Create New Invoice Type');
 
   // Reset date to today
   id('woDate').value = new Date().toISOString().slice(0, 10);
@@ -903,12 +907,13 @@ function setupCustomerDropdown() {
   }, { capture: true });
 }
 
-function populateSelect(selectId, items, defaultValue) {
+function populateSelect(selectId, items, defaultValue, createNewLabel = null) {
   const sel = id(selectId);
   if (!sel) return;
   const current = sel.value || defaultValue;
   sel.innerHTML = `<option value="">Select…</option>` +
-    items.map(i => `<option value="${esc(i.name)}" ${i.name === current ? 'selected' : ''}>${esc(i.name)}</option>`).join('');
+    items.map(i => `<option value="${esc(i.name)}" ${i.name === current ? 'selected' : ''}>${esc(i.name)}</option>`).join('') +
+    (createNewLabel ? `<option value="__create_new__" style="color:var(--blue-600);font-style:italic">＋ ${createNewLabel}</option>` : '');
   if (defaultValue) sel.value = defaultValue;
 }
 
@@ -1887,10 +1892,10 @@ function showCreateLookupModal(type) {
       const res = await api(url, 'POST', { name });
       if (isMode) {
         if (!State.shipmentModes.find(m => m.id === res.data.id)) State.shipmentModes.push(res.data);
-        populateSelect('woShipment', State.shipmentModes, res.data.name);
+        populateSelect('woShipment', State.shipmentModes, res.data.name, 'Create New Shipment Mode');
       } else {
         if (!State.invoiceTypes.find(t => t.id === res.data.id)) State.invoiceTypes.push(res.data);
-        populateSelect('woInvoiceType', State.invoiceTypes, res.data.name);
+        populateSelect('woInvoiceType', State.invoiceTypes, res.data.name, 'Create New Invoice Type');
       }
       closeModal();
       showToast('Created: ' + res.data.name, 'success');
