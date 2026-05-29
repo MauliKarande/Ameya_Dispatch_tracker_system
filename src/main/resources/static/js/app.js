@@ -830,9 +830,9 @@ function resetCreateForm() {
 
   // Reset selects to first/default option
   setupLookupDropdown('shipmentSearch', 'shipmentList', 'selectedShipment', 'shipmentDropdown',
-    State.shipmentModes, '', 'Create New Shipment Mode', 'shipment-mode');
+    () => State.shipmentModes, '', 'Create New Shipment Mode', 'shipment-mode');
   setupLookupDropdown('invoiceTypeSearch', 'invoiceTypeList', 'selectedInvoiceType', 'invoiceTypeDropdown',
-    State.invoiceTypes, 'Commercial', 'Create New Invoice Type', 'invoice-type');
+    () => State.invoiceTypes, 'Commercial', 'Create New Invoice Type', 'invoice-type');
 
   // Reset date to today
   id('woDate').value = new Date().toISOString().slice(0, 10);
@@ -903,8 +903,10 @@ function setupCustomerDropdown() {
   }, { capture: true });
 }
 
-// Generic searchable dropdown for lookup lists (shipment mode, invoice type)
-function setupLookupDropdown(searchId, listId, hiddenId, dropdownId, items, defaultValue, createNewLabel, createNewType) {
+// Generic searchable dropdown for lookup lists (shipment mode, invoice type).
+// getItems is a function () => array so it always reads the current State (avoids
+// stale-closure bug when loadLookupData() replaces the array after setup).
+function setupLookupDropdown(searchId, listId, hiddenId, dropdownId, getItems, defaultValue, createNewLabel, createNewType) {
   const searchInput = id(searchId);
   const listEl      = id(listId);
   const hidden      = id(hiddenId);
@@ -941,10 +943,10 @@ function setupLookupDropdown(searchId, listId, hiddenId, dropdownId, items, defa
     listEl.style.display = 'block';
   }
 
-  searchInput.addEventListener('focus', () => renderList(items));
+  searchInput.addEventListener('focus', () => renderList(getItems()));
   searchInput.addEventListener('input', () => {
     const q = searchInput.value.toLowerCase();
-    renderList(items.filter(i => i.name.toLowerCase().includes(q)));
+    renderList(getItems().filter(i => i.name.toLowerCase().includes(q)));
     hidden.value = searchInput.value;
   });
   document.addEventListener('click', (e) => {
