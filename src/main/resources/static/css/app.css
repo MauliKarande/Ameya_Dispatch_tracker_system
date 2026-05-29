@@ -563,6 +563,8 @@ height: 100px;
   font-weight:500;
 }
 .btn-add-option:hover { text-decoration:underline; }
+.edit-inline-add { display:flex; gap:6px; align-items:center; }
+.edit-inline-add input { flex:1; min-width:0; }
 
 /* ── FILE DROP ─────────────────────────────────────────────────── */
 .file-drop {

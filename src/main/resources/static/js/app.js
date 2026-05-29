@@ -1503,26 +1503,38 @@ function showInvoiceModal(wo, isEdit) {
 // ── EDIT DETAILS MODAL ─────────────────────────────────────────────
 function showEditDetailsModal(wo) {
   const custList = State.customers.map(c => `<option value="${esc(c.name)}"></option>`).join('');
-  const modeOpts = State.shipmentModes.map(m =>
-    `<option value="${esc(m.name)}"${m.name === wo.shipmentMode ? ' selected' : ''}>${esc(m.name)}</option>`
+  const modeOpts = () => State.shipmentModes.map(m =>
+    `<option value="${esc(m.name)}"${m.name === id('editShipmentSel')?.value ? ' selected' : ''}>${esc(m.name)}</option>`
   ).join('');
-  const typeOpts = State.invoiceTypes.map(t =>
-    `<option value="${esc(t.name)}"${t.name === (wo.invoiceType || 'Commercial') ? ' selected' : ''}>${esc(t.name)}</option>`
+  const typeOpts = () => State.invoiceTypes.map(t =>
+    `<option value="${esc(t.name)}"${t.name === id('editInvoiceTypeSel')?.value ? ' selected' : ''}>${esc(t.name)}</option>`
   ).join('');
+  const inlineRow = (inputId, addId, cancelId) =>
+    `<div class="edit-inline-add" style="display:none;margin-top:6px;display:none">
+       <input type="text" id="${inputId}" placeholder="Type name and click Add…" style="flex:1;min-width:0"/>
+       <button class="btn btn-success btn-xs" id="${addId}">Add</button>
+       <button class="btn btn-outline btn-xs" id="${cancelId}">Cancel</button>
+     </div>`;
 
   showModal('Edit Dispatch Details', `
     <div class="field-group" style="margin-bottom:12px">
       <label>Customer</label>
       <input type="text" id="editCustomerInput" value="${esc(wo.customerName)}" list="editCustDatalist" autocomplete="off" placeholder="Customer name"/>
       <datalist id="editCustDatalist">${custList}</datalist>
+      <button class="btn-add-option" id="editCreateCustBtn">+ Create New Customer</button>
+      ${inlineRow('editNewCustName','editAddCustBtn','editCancelCustBtn')}
     </div>
     <div class="field-group" style="margin-bottom:12px">
       <label>Shipment Mode</label>
-      <select id="editShipmentSel">${modeOpts}</select>
+      <select id="editShipmentSel">${State.shipmentModes.map(m => `<option value="${esc(m.name)}"${m.name === wo.shipmentMode ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select>
+      <button class="btn-add-option" id="editCreateModeBtn">+ Create New Shipment Mode</button>
+      ${inlineRow('editNewModeName','editAddModeBtn','editCancelModeBtn')}
     </div>
     <div class="field-group" style="margin-bottom:12px">
       <label>Invoice Type</label>
-      <select id="editInvoiceTypeSel">${typeOpts}</select>
+      <select id="editInvoiceTypeSel">${State.invoiceTypes.map(t => `<option value="${esc(t.name)}"${t.name === (wo.invoiceType || 'Commercial') ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select>
+      <button class="btn-add-option" id="editCreateTypeBtn">+ Create New Invoice Type</button>
+      ${inlineRow('editNewTypeName','editAddTypeBtn','editCancelTypeBtn')}
     </div>
     <div class="field-group" style="margin-bottom:12px">
       <label>Dispatch Date</label>
@@ -1533,6 +1545,79 @@ function showEditDetailsModal(wo) {
     { label: 'Save Changes', cls: 'btn-primary', id: 'saveEditDetailsBtn' },
     { label: 'Cancel', cls: 'btn-outline', close: true }
   ]);
+
+  // ── inline add helpers ──
+  function toggleInline(btnId, rowInputId) {
+    const row = id(btnId)?.nextElementSibling;
+    if (!row) return;
+    const visible = row.style.display !== 'none';
+    row.style.display = visible ? 'none' : 'flex';
+    if (!visible) id(rowInputId)?.focus();
+  }
+  function hideInline(btnId) {
+    const row = id(btnId)?.nextElementSibling;
+    if (row) row.style.display = 'none';
+  }
+
+  // Customer inline
+  id('editCreateCustBtn')?.addEventListener('click', () => toggleInline('editCreateCustBtn', 'editNewCustName'));
+  id('editCancelCustBtn')?.addEventListener('click', () => hideInline('editCreateCustBtn'));
+  id('editAddCustBtn')?.addEventListener('click', async () => {
+    const name = id('editNewCustName').value.trim();
+    if (!name) return;
+    const btn = id('editAddCustBtn'); btn.disabled = true;
+    try {
+      const res = await api('/api/lookup/customers', 'POST', { name });
+      if (!State.customers.find(c => c.id === res.data.id)) State.customers.push(res.data);
+      const datalist = id('editCustDatalist');
+      if (datalist) datalist.innerHTML += `<option value="${esc(res.data.name)}"></option>`;
+      id('editCustomerInput').value = res.data.name;
+      hideInline('editCreateCustBtn');
+      id('editNewCustName').value = '';
+      showToast('Customer created: ' + res.data.name, 'success');
+    } catch(e) { showAlert(id('editDetailsAlert'), e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  // Shipment Mode inline
+  id('editCreateModeBtn')?.addEventListener('click', () => toggleInline('editCreateModeBtn', 'editNewModeName'));
+  id('editCancelModeBtn')?.addEventListener('click', () => hideInline('editCreateModeBtn'));
+  id('editAddModeBtn')?.addEventListener('click', async () => {
+    const name = id('editNewModeName').value.trim();
+    if (!name) return;
+    const btn = id('editAddModeBtn'); btn.disabled = true;
+    try {
+      const res = await api('/api/lookup/shipment-modes', 'POST', { name });
+      if (!State.shipmentModes.find(m => m.id === res.data.id)) State.shipmentModes.push(res.data);
+      const sel = id('editShipmentSel');
+      sel.innerHTML += `<option value="${esc(res.data.name)}">${esc(res.data.name)}</option>`;
+      sel.value = res.data.name;
+      hideInline('editCreateModeBtn');
+      id('editNewModeName').value = '';
+      showToast('Shipment mode created: ' + res.data.name, 'success');
+    } catch(e) { showAlert(id('editDetailsAlert'), e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  // Invoice Type inline
+  id('editCreateTypeBtn')?.addEventListener('click', () => toggleInline('editCreateTypeBtn', 'editNewTypeName'));
+  id('editCancelTypeBtn')?.addEventListener('click', () => hideInline('editCreateTypeBtn'));
+  id('editAddTypeBtn')?.addEventListener('click', async () => {
+    const name = id('editNewTypeName').value.trim();
+    if (!name) return;
+    const btn = id('editAddTypeBtn'); btn.disabled = true;
+    try {
+      const res = await api('/api/lookup/invoice-types', 'POST', { name });
+      if (!State.invoiceTypes.find(t => t.id === res.data.id)) State.invoiceTypes.push(res.data);
+      const sel = id('editInvoiceTypeSel');
+      sel.innerHTML += `<option value="${esc(res.data.name)}">${esc(res.data.name)}</option>`;
+      sel.value = res.data.name;
+      hideInline('editCreateTypeBtn');
+      id('editNewTypeName').value = '';
+      showToast('Invoice type created: ' + res.data.name, 'success');
+    } catch(e) { showAlert(id('editDetailsAlert'), e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
 
   id('saveEditDetailsBtn')?.addEventListener('click', async () => {
     const customerName = id('editCustomerInput').value.trim();
