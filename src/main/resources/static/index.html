@@ -237,16 +237,20 @@
           <!-- Shipment Mode -->
           <div class="field-group">
             <label>Shipment Mode <span class="req">*</span></label>
-            <select id="woShipment" required>
-              <option value="">Select mode…</option>
-            </select>
+            <div class="searchable-dropdown" id="shipmentDropdown">
+              <input type="text" id="shipmentSearch" placeholder="Search or select mode…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+              <div class="dropdown-list" id="shipmentList" style="display:none"></div>
+            </div>
+            <input type="hidden" id="selectedShipment"/>
           </div>
           <!-- Invoice Type -->
           <div class="field-group">
             <label>Invoice Type</label>
-            <select id="woInvoiceType">
-              <option value="Commercial" selected>Commercial</option>
-            </select>
+            <div class="searchable-dropdown" id="invoiceTypeDropdown">
+              <input type="text" id="invoiceTypeSearch" placeholder="Search or select type…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+              <div class="dropdown-list" id="invoiceTypeList" style="display:none"></div>
+            </div>
+            <input type="hidden" id="selectedInvoiceType"/>
           </div>
           <!-- Dispatch Date -->
           <div class="field-group">

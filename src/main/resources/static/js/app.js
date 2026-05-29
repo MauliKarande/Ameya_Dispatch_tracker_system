@@ -814,12 +814,6 @@ function initCreateForm() {
   if (!_createFormBound) {
     _createFormBound = true;
     setupFileDrop('excelDropZone', 'woExcelFile', 'excelFileName', ['.xlsx','.xls']);
-    id('woShipment')?.addEventListener('change', function() {
-      if (this.value === '__create_new__') { this.value = ''; showCreateLookupModal('shipment-mode'); }
-    });
-    id('woInvoiceType')?.addEventListener('change', function() {
-      if (this.value === '__create_new__') { this.value = 'Commercial'; showCreateLookupModal('invoice-type'); }
-    });
     id('createWoBtn')?.addEventListener('click', submitCreateWo);
   }
 }
@@ -835,8 +829,10 @@ function resetCreateForm() {
   if (list) list.style.display = 'none';
 
   // Reset selects to first/default option
-  populateSelect('woShipment', State.shipmentModes, '', 'Create New Shipment Mode');
-  populateSelect('woInvoiceType', State.invoiceTypes, 'Commercial', 'Create New Invoice Type');
+  setupLookupDropdown('shipmentSearch', 'shipmentList', 'selectedShipment', 'shipmentDropdown',
+    State.shipmentModes, '', 'Create New Shipment Mode', 'shipment-mode');
+  setupLookupDropdown('invoiceTypeSearch', 'invoiceTypeList', 'selectedInvoiceType', 'invoiceTypeDropdown',
+    State.invoiceTypes, 'Commercial', 'Create New Invoice Type', 'invoice-type');
 
   // Reset date to today
   id('woDate').value = new Date().toISOString().slice(0, 10);
@@ -907,20 +903,68 @@ function setupCustomerDropdown() {
   }, { capture: true });
 }
 
-function populateSelect(selectId, items, defaultValue, createNewLabel = null) {
+// Generic searchable dropdown for lookup lists (shipment mode, invoice type)
+function setupLookupDropdown(searchId, listId, hiddenId, dropdownId, items, defaultValue, createNewLabel, createNewType) {
+  const searchInput = id(searchId);
+  const listEl      = id(listId);
+  const hidden      = id(hiddenId);
+  if (!searchInput || !listEl || !hidden) return;
+
+  hidden.value = defaultValue || '';
+  searchInput.value = defaultValue || '';
+
+  function renderList(filtered) {
+    listEl.innerHTML = '';
+    if (!filtered.length) {
+      listEl.innerHTML = '<div class="dropdown-item no-results">No results found</div>';
+    } else {
+      filtered.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'dropdown-item';
+        div.textContent = item.name;
+        div.addEventListener('click', () => {
+          searchInput.value = item.name;
+          hidden.value = item.name;
+          listEl.style.display = 'none';
+        });
+        listEl.appendChild(div);
+      });
+    }
+    const createDiv = document.createElement('div');
+    createDiv.className = 'dropdown-item create-new';
+    createDiv.textContent = '+ ' + createNewLabel;
+    createDiv.addEventListener('click', () => {
+      listEl.style.display = 'none';
+      showCreateLookupModal(createNewType, searchId, hiddenId);
+    });
+    listEl.appendChild(createDiv);
+    listEl.style.display = 'block';
+  }
+
+  searchInput.addEventListener('focus', () => renderList(items));
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.toLowerCase();
+    renderList(items.filter(i => i.name.toLowerCase().includes(q)));
+    hidden.value = searchInput.value;
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#' + dropdownId)) listEl.style.display = 'none';
+  }, { capture: true });
+}
+
+function populateSelect(selectId, items, defaultValue) {
   const sel = id(selectId);
   if (!sel) return;
   const current = sel.value || defaultValue;
   sel.innerHTML = `<option value="">Select…</option>` +
-    items.map(i => `<option value="${esc(i.name)}" ${i.name === current ? 'selected' : ''}>${esc(i.name)}</option>`).join('') +
-    (createNewLabel ? `<option value="__create_new__" style="color:var(--blue-600);font-style:italic">＋ ${createNewLabel}</option>` : '');
+    items.map(i => `<option value="${esc(i.name)}" ${i.name === current ? 'selected' : ''}>${esc(i.name)}</option>`).join('');
   if (defaultValue) sel.value = defaultValue;
 }
 
 async function submitCreateWo() {
   const customerName = id('selectedCustomer').value || id('customerSearch').value.trim();
-  const shipmentMode = id('woShipment').value;
-  const invoiceType  = id('woInvoiceType').value || 'Commercial';
+  const shipmentMode = id('selectedShipment').value || id('shipmentSearch').value.trim();
+  const invoiceType  = id('selectedInvoiceType').value || id('invoiceTypeSearch').value.trim() || 'Commercial';
   const woDate       = id('woDate').value;
   const excelFile    = id('woExcelFile').files[0];
   const alertEl      = id('createWoAlert');
@@ -1866,9 +1910,9 @@ function showCreateCustomerModal(prefill) {
   });
 }
 
-function showCreateLookupModal(type) {
+function showCreateLookupModal(type, searchId, hiddenId) {
   const isMode = type === 'shipment-mode';
-  const title = isMode ? 'Create Shipment Mode' : 'Create Invoice Type';
+  const title   = isMode ? 'Create Shipment Mode' : 'Create Invoice Type';
   const fieldId = isMode ? 'newModeValue' : 'newTypeValue';
   const alertId = isMode ? 'createModeAlert' : 'createTypeAlert';
   const btnId   = isMode ? 'createModeBtn' : 'createTypeBtn';
@@ -1892,10 +1936,22 @@ function showCreateLookupModal(type) {
       const res = await api(url, 'POST', { name });
       if (isMode) {
         if (!State.shipmentModes.find(m => m.id === res.data.id)) State.shipmentModes.push(res.data);
-        populateSelect('woShipment', State.shipmentModes, res.data.name, 'Create New Shipment Mode');
       } else {
         if (!State.invoiceTypes.find(t => t.id === res.data.id)) State.invoiceTypes.push(res.data);
-        populateSelect('woInvoiceType', State.invoiceTypes, res.data.name, 'Create New Invoice Type');
+      }
+      // Update whichever dropdown triggered this (create form or edit modal inline)
+      const sId = searchId || (isMode ? 'shipmentSearch' : 'invoiceTypeSearch');
+      const hId = hiddenId || (isMode ? 'selectedShipment' : 'selectedInvoiceType');
+      if (id(sId)) id(sId).value = res.data.name;
+      if (id(hId)) id(hId).value = res.data.name;
+      // Also keep edit modal inline selects in sync if present
+      if (isMode && id('editShipmentSel')) {
+        id('editShipmentSel').innerHTML += `<option value="${esc(res.data.name)}" selected>${esc(res.data.name)}</option>`;
+        id('editShipmentSel').value = res.data.name;
+      }
+      if (!isMode && id('editInvoiceTypeSel')) {
+        id('editInvoiceTypeSel').innerHTML += `<option value="${esc(res.data.name)}" selected>${esc(res.data.name)}</option>`;
+        id('editInvoiceTypeSel').value = res.data.name;
       }
       closeModal();
       showToast('Created: ' + res.data.name, 'success');
