@@ -23,6 +23,7 @@ public class WorkOrderSummaryDTO {
     private java.time.LocalDate invoiceDate;
     private String readyForDispatchStatus;
     private String collectionStatus;
+    private LocalDateTime collectionUpdatedAt;
     private boolean hasNote;
     private boolean hasInvoiceIssue;
     private LocalDateTime createdAt;

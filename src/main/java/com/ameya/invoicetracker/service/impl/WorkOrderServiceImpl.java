@@ -478,6 +478,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
             .invoiceStatus(wo.getInvoiceStatus().name())
             .invoiceNumber(wo.getInvoiceNumber()).invoiceDate(wo.getInvoiceDate())            .readyForDispatchStatus(wo.getReadyForDispatchStatus().name())
             .collectionStatus(wo.getCollectionStatus().name())
+            .collectionUpdatedAt(wo.getCollectionUpdatedAt())
             .hasNote(wo.getNoteForInvoice() != null && !wo.getNoteForInvoice().isBlank())
             .hasInvoiceIssue(wo.getInvoiceIssue() != null && !wo.getInvoiceIssue().isBlank())
             .createdAt(wo.getCreatedAt()).updatedAt(wo.getUpdatedAt()).createdBy(wo.getCreatedBy())

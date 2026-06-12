@@ -460,8 +460,8 @@ function renderDashboard() {
 }
 
 function isCurrentMonth(wo) {
-  if (!wo?.woDate) return false;
-  const date = new Date(wo.woDate + 'T00:00:00');
+  if (!wo?.createdAt) return false;
+  const date = new Date(wo.createdAt);
   const now = new Date();
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
 }
@@ -502,7 +502,8 @@ function bindDashboardControls() {
     };
   }
 
-  ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn', 'dashReadyInvoiceBtn', 'dashReadyDispatchBtn'].forEach(btnId => {
+  const viewBtnIds = ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn', 'dashReadyInvoiceBtn', 'dashReadyDispatchBtn', 'dashTodaysCollectionBtn'];
+  viewBtnIds.forEach(btnId => {
     const btn = id(btnId);
     if (!btn) return;
     btn.onclick = () => {
@@ -514,9 +515,13 @@ function bindDashboardControls() {
         State.dashboardView = 'COMPLETED';
       } else if (btnId === 'dashAllBtn') {
         State.dashboardView = 'ALL';
+      } else if (btnId === 'dashTodaysCollectionBtn') {
+        State.dashboardView = 'TODAYS_COLLECTION';
       } else {
         State.dashboardView = 'IN_PROGRESS';
       }
+      viewBtnIds.forEach(b => id(b)?.classList.remove('active'));
+      btn.classList.add('active');
       State.dashPage = 1;
       renderDashboard();
     };
@@ -555,6 +560,14 @@ function getDashboardBaseList(list) {
   if (State.dashboardView === 'READY_DISPATCH') return list.filter(w =>
     w.readyForDispatchStatus === 'DONE'
   );
+  if (State.dashboardView === 'TODAYS_COLLECTION') {
+    const today = new Date().toISOString().substring(0, 10);
+    return list.filter(w =>
+      w.collectionStatus === 'DONE' &&
+      w.collectionUpdatedAt &&
+      w.collectionUpdatedAt.substring(0, 10) === today
+    );
+  }
   return list.filter(w => w.status === 'IN_PROGRESS');
 }
 
@@ -589,10 +602,10 @@ function applyFilters(sourceList = State.woList, returnOnly = false) {
       return customerMatch || invoiceMatch;
     });
   }
-  if (m)   list = list.filter(w => w.woDate && new Date(w.woDate + 'T00:00:00').getMonth()+1 === parseInt(m, 10));
-  if (y)   list = list.filter(w => w.woDate && new Date(w.woDate + 'T00:00:00').getFullYear() === parseInt(y, 10));
-  if (df)  list = list.filter(w => w.woDate && w.woDate >= df);
-  if (dt)  list = list.filter(w => w.woDate && w.woDate <= dt);
+  if (m)   list = list.filter(w => w.createdAt && new Date(w.createdAt).getMonth()+1 === parseInt(m, 10));
+  if (y)   list = list.filter(w => w.createdAt && new Date(w.createdAt).getFullYear() === parseInt(y, 10));
+  if (df)  list = list.filter(w => w.createdAt && w.createdAt.substring(0, 10) >= df);
+  if (dt)  list = list.filter(w => w.createdAt && w.createdAt.substring(0, 10) <= dt);
   if (idf) list = list.filter(w => w.invoiceDate && w.invoiceDate >= idf);
   if (idt) list = list.filter(w => w.invoiceDate && w.invoiceDate <= idt);
   if (it)  list = list.filter(w => (w.invoiceType || 'Commercial') === it);
