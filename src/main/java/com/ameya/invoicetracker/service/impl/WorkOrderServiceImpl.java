@@ -533,7 +533,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
             .fileType(fs.getFileType().name()).version(fs.getVersion())
             .uploadedAt(fs.getUploadedAt()).uploadedBy(fs.getUploadedBy())
             .remarks(fs.getRemarks()).downloadUrl("/api/files/download/" + fs.getId())
-            .amountTotal(fs.getAmountTotal()).build();
+            .amountTotal(fs.getAmountTotal()).amountVerified(fs.isAmountVerified()).build();
     }
     private ActivityLogDTO toLogDTO(ActivityLog l) {
         return ActivityLogDTO.builder().id(l.getId()).username(l.getUsername()).fullName(l.getFullName())
@@ -550,6 +550,25 @@ public class WorkOrderServiceImpl implements WorkOrderService {
                 && wo.getInvoiceStatus() == WorkOrder.StepStatus.PENDING)
             .map(this::toSummaryDTO)
             .collect(Collectors.toList());
+    }
+
+    @Override @Transactional(readOnly = true)
+    public List<WorkOrderSummaryDTO> getReadyForDispatch() {
+        return workOrderRepository.findAllByOrderByCreatedAtDesc()
+            .stream()
+            .filter(wo -> wo.getStockStatus() == WorkOrder.StepStatus.DONE
+                && wo.getPackagingStatus() == WorkOrder.StepStatus.DONE
+                && wo.getInvoiceStatus() == WorkOrder.StepStatus.DONE
+                && wo.getReadyForDispatchStatus() == WorkOrder.StepStatus.PENDING)
+            .map(this::toSummaryDTO)
+            .collect(Collectors.toList());
+    }
+
+    @Override @Transactional(readOnly = true)
+    public WorkOrderSummaryDTO getSummaryById(Long id) {
+        WorkOrder wo = workOrderRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Work order not found: " + id));
+        return toSummaryDTO(wo);
     }
 
     @Override

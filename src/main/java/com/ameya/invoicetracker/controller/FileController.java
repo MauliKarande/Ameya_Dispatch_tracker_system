@@ -94,6 +94,7 @@ public class FileController {
         FileStorage fs = fileStorageRepository.findById(fileId)
             .orElseThrow(() -> new ResourceNotFoundException("File not found: " + fileId));
         fs.setAmountTotal(value);
+        fs.setAmountVerified(true);
         fileStorageRepository.save(fs);
         return ResponseEntity.ok(ApiResponse.ok("Amount total saved", null));
     }

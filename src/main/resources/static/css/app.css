@@ -909,3 +909,44 @@ height: 100px;
   }
   .dashboard-view-buttons .btn { width: 100%; text-align: center; justify-content: center; }
 }
+
+/* ── RFD PAGE (Sales Executive) ─────────────────────────────── */
+#pageRfd { padding: 0; }
+#rfdScrollArea { flex:1; overflow-y:auto; overflow-x:hidden; min-height:0; padding:24px 28px; }
+.rfd-tabs {
+  display:flex; gap:4px; margin-bottom:20px;
+  border-bottom:2px solid var(--border); padding-bottom:0;
+}
+.rfd-tab {
+  background:none; border:none; cursor:pointer;
+  padding:10px 20px; font-size:.9rem; font-weight:600;
+  color:var(--text2); border-bottom:3px solid transparent;
+  margin-bottom:-2px; border-radius:0; transition:color .2s;
+}
+.rfd-tab:hover  { color:var(--text); }
+.rfd-tab.active { color:var(--blue-600); border-bottom-color:var(--blue-600); }
+.rfd-list { display:flex; flex-direction:column; gap:12px; max-width:720px; }
+.rfd-dl-link { color:var(--blue-600); font-weight:700; text-decoration:none; }
+.rfd-dl-link:hover { text-decoration:underline; }
+.rfd-card {
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  background:var(--surface); border:1px solid var(--border);
+  border-left:4px solid var(--green); border-radius:var(--radius);
+  padding:16px 18px; box-shadow:var(--shadow);
+}
+.rfd-card-done { border-left-color:var(--text3); opacity:.85; }
+.rfd-card-info { flex:1; min-width:0; }
+.rfd-dl-number { font-size:1rem; font-weight:700; color:var(--blue-600); }
+.rfd-customer  { font-size:.9rem; font-weight:600; color:var(--text); margin-top:2px; }
+.rfd-meta      { font-size:.78rem; color:var(--text2); margin-top:4px; }
+.rfd-meta strong { font-weight:700; color:var(--text); }
+.rfd-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.rfd-dispatch-btn { white-space:nowrap; }
+.rfd-view-btn { white-space:nowrap; }
+.rfd-done-badge { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0; }
+.rfd-done-meta  { font-size:.72rem; color:var(--text3); text-align:right; }
+.badge-done     { background:var(--green-bg); color:var(--green); font-size:.72rem; font-weight:700;
+                  padding:2px 8px; border-radius:20px; white-space:nowrap; }
+
+/* ── Bold invoice numbers everywhere ───────────────────────── */
+.invoice-num-bold { font-weight:700; }

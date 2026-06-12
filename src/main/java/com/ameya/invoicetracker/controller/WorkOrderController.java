@@ -32,6 +32,10 @@ public class WorkOrderController {
             List<WorkOrderSummaryDTO> result = workOrderService.getReadyForInvoice();
             return ResponseEntity.ok(ApiResponse.ok(result));
         }
+        if ("ready-for-dispatch".equals(filter)) {
+            List<WorkOrderSummaryDTO> result = workOrderService.getReadyForDispatch();
+            return ResponseEntity.ok(ApiResponse.ok(result));
+        }
 
         boolean hasFilter = (customer != null && !customer.isBlank()) || month != null
             || year != null || (status != null && !status.isBlank());

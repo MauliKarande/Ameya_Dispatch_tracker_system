@@ -58,14 +58,17 @@
       </div>
     </div>
     <nav class="sidebar-nav">
-      <a href="#" class="nav-item active" data-page="dashboard" title="Dashboard">
+      <a href="#" class="nav-item active nav-hide-sales-exec" data-page="dashboard" title="Dashboard">
         <span class="nav-icon">⊞</span><span class="nav-label">Dashboard</span>
       </a>
       <a href="#" class="nav-item nav-only-gm" data-page="create-wo" title="New Dispatch">
         <span class="nav-icon">＋</span><span class="nav-label">New Dispatch</span>
       </a>
-      <a href="#" class="nav-item" data-page="all-wo" title="All Dispatch Lists">
+      <a href="#" class="nav-item nav-hide-sales-exec" data-page="all-wo" title="All Dispatch Lists">
         <span class="nav-icon">☰</span><span class="nav-label">All Dispatch Lists</span>
+      </a>
+      <a href="#" class="nav-item nav-only-sales-exec" data-page="rfd" title="Ready for Dispatch">
+        <span class="nav-icon">🚚</span><span class="nav-label">Ready for Dispatch</span>
       </a>
       <a href="#" class="nav-item nav-only-admin" data-page="user-mgmt" title="User Management">
         <span class="nav-icon">👥</span><span class="nav-label">User Management</span>
@@ -270,6 +273,44 @@
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-primary" id="createWoBtn">Create Dispatch</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- READY FOR DISPATCH (Sales Executive) -->
+    <section id="pageRfd" class="page">
+      <div id="rfdScrollArea">
+        <div class="page-header">
+          <div><h2 class="page-title">My Dashboard</h2><p class="page-sub">Track your documentation work</p></div>
+        </div>
+        <!-- Tabs -->
+        <div class="rfd-tabs">
+          <button class="rfd-tab active" data-tab="pending">Pending Documentation</button>
+          <button class="rfd-tab" data-tab="done">Documentation Done</button>
+        </div>
+
+        <!-- Pending tab -->
+        <div id="rfdTabPending">
+          <div id="rfdLoading" style="display:none;text-align:center;padding:40px;color:var(--text3)">Loading…</div>
+          <div id="rfdEmpty" style="display:none;text-align:center;padding:60px;color:var(--text3)">
+            <div style="font-size:2.5rem;margin-bottom:12px">✅</div>
+            <div style="font-weight:600;font-size:1.05rem">All caught up!</div>
+            <div style="font-size:.9rem;margin-top:6px">No dispatches pending documentation.</div>
+          </div>
+          <div id="rfdList" class="rfd-list"></div>
+          <div id="rfdPagination" class="pagination-bar"></div>
+        </div>
+
+        <!-- Doc Done tab -->
+        <div id="rfdTabDone" style="display:none">
+          <div id="rfdDoneLoading" style="display:none;text-align:center;padding:40px;color:var(--text3)">Loading…</div>
+          <div id="rfdDoneEmpty" style="display:none;text-align:center;padding:60px;color:var(--text3)">
+            <div style="font-size:2.5rem;margin-bottom:12px">📋</div>
+            <div style="font-weight:600;font-size:1.05rem">No completed entries yet</div>
+            <div style="font-size:.9rem;margin-top:6px">Dispatches you mark as done will appear here.</div>
+          </div>
+          <div id="rfdDoneList" class="rfd-list"></div>
+          <div id="rfdDonePagination" class="pagination-bar"></div>
         </div>
       </div>
     </section>

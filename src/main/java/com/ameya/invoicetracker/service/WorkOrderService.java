@@ -26,5 +26,7 @@ public interface WorkOrderService {
     WorkOrderDetailDTO saveInvoiceIssue(Long id, InvoiceIssueRequest request, String username);
     void deleteWorkOrder(Long id, String username);
     List<WorkOrderSummaryDTO> getReadyForInvoice();
+    List<WorkOrderSummaryDTO> getReadyForDispatch();
     void deleteInvoicePdf(Long fileId, String username);
+    WorkOrderSummaryDTO getSummaryById(Long id);
 }

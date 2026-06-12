@@ -12,4 +12,5 @@ public class FileDTO {
     private String remarks;
     private String downloadUrl;
     private Double amountTotal;
+    private boolean amountVerified;
 }

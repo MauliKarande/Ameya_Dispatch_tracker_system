@@ -37,6 +37,9 @@ public class DataSeeder implements CommandLineRunner {
         seedUser("mauli.karande",    "Mauli Karande",    User.Role.INVOICE_CREATOR, "123");
         seedUser("sanket.gogawale",  "Sanket Gogawale",  User.Role.INVOICE_CREATOR, "123");
 
+        // ── SALES EXECUTIVE ───────────────────────────────────────────────────
+        seedUser("vaibhav.yadav", "Vaibhav Yadav", User.Role.SALES_EXECUTIVE, "123456");
+
         // ── GUEST ─────────────────────────────────────────────────────────────
         seedUser("guest", "Guest", User.Role.GUEST, "123");
 

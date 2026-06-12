@@ -30,6 +30,10 @@ const State = {
   allWoPage: 1,
   dashDisplayList: [],
   allWoDisplayList: [],
+  rfdPendingList: [],
+  rfdPendingPage: 1,
+  rfdDoneList: [],
+  rfdDonePage: 1,
 };
 
 // ── INIT ───────────────────────────────────────────────────────────
@@ -223,15 +227,16 @@ function showApp() {
 
   const savedPage = localStorage.getItem('lastPage');
   const savedWoId = localStorage.getItem('lastWoId');
-  const allowedPages = ['dashboard','create-wo','all-wo','detail','user-mgmt'];
+  const allowedPages = ['dashboard','create-wo','all-wo','rfd','detail','user-mgmt'];
   let targetPage = savedPage && allowedPages.includes(savedPage) ? savedPage : null;
 
   if (State.user?.role === 'ADMIN') {
-    targetPage = targetPage === 'dashboard' || targetPage === 'create-wo' || targetPage === 'all-wo' || targetPage === 'detail'
-      ? 'user-mgmt'
-      : 'user-mgmt';
+    targetPage = 'user-mgmt';
+  } else if (State.user?.role === 'SALES_EXECUTIVE') {
+    // Sales Exec only sees the RFD page
+    if (targetPage !== 'rfd') targetPage = 'rfd';
   } else {
-    if (targetPage === 'user-mgmt') targetPage = 'dashboard';
+    if (targetPage === 'user-mgmt' || targetPage === 'rfd') targetPage = 'dashboard';
     if (!targetPage) targetPage = 'dashboard';
   }
 
@@ -285,14 +290,17 @@ function setupUserUI() {
   id('sidebarUserName').textContent = u.fullName;
   id('sidebarUserRole').textContent = roleLabel(u.role);
 
-  const isGM    = u.role === 'GENERAL_MANAGER';
-  const isAdmin = u.role === 'ADMIN';
+  const isGM          = u.role === 'GENERAL_MANAGER';
+  const isAdmin       = u.role === 'ADMIN';
   const isInvoiceCreator = u.role === 'INVOICE_CREATOR';
+  const isSalesExec   = u.role === 'SALES_EXECUTIVE';
 
   // Show/hide nav items by role
   document.querySelectorAll('.nav-only-gm').forEach(el => el.style.display = isGM ? '' : 'none');
   document.querySelectorAll('.nav-only-admin').forEach(el => el.style.display = isAdmin ? '' : 'none');
   document.querySelectorAll('.nav-only-invoice-creator').forEach(el => el.style.display = isInvoiceCreator ? '' : 'none');
+  document.querySelectorAll('.nav-only-sales-exec').forEach(el => el.style.display = isSalesExec ? '' : 'none');
+  document.querySelectorAll('.nav-hide-sales-exec').forEach(el => el.style.display = isSalesExec ? 'none' : '');
 
   // ADMIN cannot touch dispatches — redirect to user-mgmt as home
   if (isAdmin) {
@@ -316,7 +324,7 @@ function setupUserUI() {
 }
 
 function roleLabel(role) {
-  const map = { ADMIN:'Admin', GENERAL_MANAGER:'General Manager', STORE:'Store', INVOICE_CREATOR:'Invoice Creator', GUEST:'Guest' };
+  const map = { ADMIN:'Admin', GENERAL_MANAGER:'General Manager', STORE:'Store', INVOICE_CREATOR:'Invoice Creator', SALES_EXECUTIVE:'Sales Executive', GUEST:'Guest' };
   return map[role] || role;
 }
 
@@ -349,6 +357,7 @@ function navigateTo(page) {
     'dashboard':  { pageId:'pageDashboard',  title:'Dashboard' },
     'create-wo':  { pageId:'pageCreateWo',   title:'New Dispatch' },
     'all-wo':     { pageId:'pageAllWo',      title:'All Dispatch Lists' },
+    'rfd':        { pageId:'pageRfd',        title:'Ready for Dispatch' },
     'detail':     { pageId:'pageWoDetail',   title:'Dispatch Detail' },
     'user-mgmt':  { pageId:'pageUserMgmt',   title:'User Management' },
   };
@@ -367,6 +376,7 @@ function navigateTo(page) {
   }
   if (page === 'create-wo') initCreateForm();
   if (page === 'all-wo') loadAllWo();
+  if (page === 'rfd') loadRFDPage();
   if (page === 'user-mgmt') loadUserManagement();
 }
 
@@ -703,7 +713,7 @@ function woRow(w) {
     <td><span class="badge badge-ip" style="font-size:.72rem">${esc(w.invoiceType||'Commercial')}</span></td>
     <td>${stepBadge(w.stockStatus)}</td>
     <td>${stepBadge(w.packagingStatus)}<br><span style="font-size:.7rem;color:var(--text3)">${w.packingType==='01_BOX'?'01 Box':w.packingType==='MORE_THAN_ONE_BOX'?'>1 Box':''}</span></td>
-    <td>${stepBadge(w.invoiceStatus)}${w.invoiceNumber?`<br><span style="font-size:.7rem;color:var(--text3)">${esc(w.invoiceNumber)}</span>`:''}</td>
+    <td>${stepBadge(w.invoiceStatus)}${w.invoiceNumber?`<br><span style="font-size:.7rem;color:var(--text3)"><strong>${esc(w.invoiceNumber)}</strong></span>`:''}</td>
     <td>${stepBadge(w.readyForDispatchStatus||'PENDING')}</td>
     <td>${stepBadge(w.collectionStatus||'PENDING')}</td>
     <td>${statusBadge}</td>
@@ -806,6 +816,160 @@ function renderAllWoContent(list) {
     </div></div>`;
   renderPagination('allWoPagination', safePage, totalPages, total, 'setAllWoPage');
 }
+
+// ── READY FOR DISPATCH PAGE (Sales Executive) ───────────────────────
+let _rfdTabsBound = false;
+
+function loadRFDPage() {
+  if (!_rfdTabsBound) {
+    _rfdTabsBound = true;
+
+    document.querySelectorAll('.rfd-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.rfd-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const which = tab.dataset.tab;
+        id('rfdTabPending').style.display = which === 'pending' ? '' : 'none';
+        id('rfdTabDone').style.display    = which === 'done'    ? '' : 'none';
+        if (which === 'done') loadRFDDoneTab();
+      });
+    });
+
+    // DL number click — delegated on scroll area, works for both tabs
+    id('rfdScrollArea').addEventListener('click', (e) => {
+      const link = e.target.closest('.rfd-dl-link');
+      if (!link) return;
+      e.preventDefault();
+      openWoDetail(parseInt(link.dataset.woId));
+    });
+  }
+  loadRFDPendingTab();
+}
+
+async function loadRFDPendingTab() {
+  id('rfdLoading').style.display = 'block';
+  id('rfdEmpty').style.display = 'none';
+  id('rfdList').innerHTML = '';
+  id('rfdPagination').innerHTML = '';
+  try {
+    const res = await api('/api/sales-exec/rfd');
+    State.rfdPendingList = res.data || [];
+    State.rfdPendingPage = 1;
+    id('rfdLoading').style.display = 'none';
+    renderRFDPendingPage();
+  } catch(e) {
+    id('rfdLoading').style.display = 'none';
+    showToast('Failed to load list: ' + e.message, 'error');
+  }
+}
+
+function renderRFDPendingPage() {
+  const list = State.rfdPendingList || [];
+  if (!list.length) { id('rfdEmpty').style.display = 'block'; id('rfdPagination').innerHTML = ''; return; }
+  id('rfdEmpty').style.display = 'none';
+
+  const { items, safePage, totalPages, total } = paginateList(list, State.rfdPendingPage);
+  State.rfdPendingPage = safePage;
+
+  id('rfdList').innerHTML = items.map(wo => `
+    <div class="rfd-card" id="rfd-card-${wo.id}">
+      <div class="rfd-card-info">
+        <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a></div>
+        <div class="rfd-customer">${esc(wo.customerName)}</div>
+        <div class="rfd-meta">
+          ${wo.invoiceNumber ? `Invoice: <strong>${esc(wo.invoiceNumber)}</strong> &nbsp;·&nbsp;` : ''}
+          ${esc(wo.shipmentMode || '—')} &nbsp;·&nbsp; ${formatDate(wo.woDate)}
+        </div>
+      </div>
+      <div class="rfd-actions">
+        ${wo.latestPdfFileId ? `<a href="/api/files/view/${wo.latestPdfFileId}?token=${State.token}" target="_blank" class="btn btn-outline rfd-view-btn">View Invoice</a>` : ''}
+        <button class="btn btn-success rfd-dispatch-btn" data-id="${wo.id}">Documentation Done</button>
+      </div>
+    </div>
+  `).join('');
+
+  renderPagination('rfdPagination', safePage, totalPages, total, 'setRfdPendingPage');
+
+  id('rfdList').querySelectorAll('.rfd-dispatch-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const woId = btn.dataset.id;
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        await api(`/api/sales-exec/${woId}/mark-done`, 'POST');
+        // Remove from in-memory list and re-render
+        State.rfdPendingList = (State.rfdPendingList || []).filter(w => String(w.id) !== String(woId));
+        renderRFDPendingPage();
+        showToast('Documentation marked as done!', 'success');
+      } catch(e) {
+        showToast(e.message, 'error');
+        btn.disabled = false; btn.textContent = 'Documentation Done';
+      }
+    });
+  });
+}
+
+async function loadRFDDoneTab() {
+  id('rfdDoneLoading').style.display = 'block';
+  id('rfdDoneEmpty').style.display = 'none';
+  id('rfdDoneList').innerHTML = '';
+  id('rfdDonePagination').innerHTML = '';
+  try {
+    const res = await api('/api/sales-exec/doc-done');
+    State.rfdDoneList = res.data || [];
+    State.rfdDonePage = 1;
+    id('rfdDoneLoading').style.display = 'none';
+    renderRFDDonePage();
+  } catch(e) {
+    id('rfdDoneLoading').style.display = 'none';
+    showToast('Failed to load done list: ' + e.message, 'error');
+  }
+}
+
+function renderRFDDonePage() {
+  const list = State.rfdDoneList || [];
+  if (!list.length) { id('rfdDoneEmpty').style.display = 'block'; id('rfdDonePagination').innerHTML = ''; return; }
+  id('rfdDoneEmpty').style.display = 'none';
+
+  const { items, safePage, totalPages, total } = paginateList(list, State.rfdDonePage);
+  State.rfdDonePage = safePage;
+
+  id('rfdDoneList').innerHTML = items.map(item => {
+    const wo = item.workOrder;
+    return `
+      <div class="rfd-card rfd-card-done">
+        <div class="rfd-card-info">
+          <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a></div>
+          <div class="rfd-customer">${esc(wo.customerName)}</div>
+          <div class="rfd-meta">
+            ${wo.invoiceNumber ? `Invoice: <strong>${esc(wo.invoiceNumber)}</strong> &nbsp;·&nbsp;` : ''}
+            ${esc(wo.shipmentMode || '—')} &nbsp;·&nbsp; ${formatDate(wo.woDate)}
+          </div>
+        </div>
+        <div class="rfd-done-badge">
+          ${wo.latestPdfFileId ? `<a href="/api/files/view/${wo.latestPdfFileId}?token=${State.token}" target="_blank" class="btn btn-outline rfd-view-btn">View Invoice</a>` : ''}
+          <span class="badge badge-done">Doc Done</span>
+          <div class="rfd-done-meta">by ${esc(item.markedBy)}<br>${formatDate(item.markedAt)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  renderPagination('rfdDonePagination', safePage, totalPages, total, 'setRfdDonePage');
+}
+
+window.setRfdPendingPage = function(n) {
+  State.rfdPendingPage = n;
+  renderRFDPendingPage();
+  const area = id('rfdScrollArea');
+  if (area) area.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+window.setRfdDonePage = function(n) {
+  State.rfdDonePage = n;
+  renderRFDDonePage();
+  const area = id('rfdScrollArea');
+  if (area) area.scrollTo({ top: 0, behavior: 'smooth' });
+};
 
 // ── CREATE FORM ─────────────────────────────────────────────────────
 let _createFormBound = false;
@@ -1173,7 +1337,7 @@ function renderInvoiceStep(wo, role) {
   const canRevert = canToggle && isDone && !nextDone;
   return `<div class="step-row">
     <div>
-      <div class="step-label">Invoice ${wo.invoiceNumber ? `<small style="color:var(--text3)">(${wo.invoiceNumber}${wo.invoiceDate ? ' · ' + formatDate(wo.invoiceDate) : ''})</small>` : ''}</div>
+      <div class="step-label">Invoice ${wo.invoiceNumber ? `<small style="color:var(--text3)">(<strong>${wo.invoiceNumber}</strong>${wo.invoiceDate ? ' · ' + formatDate(wo.invoiceDate) : ''})</small>` : ''}</div>
       <div class="step-sub">${isDone && wo.invoiceUpdatedBy ? 'By '+wo.invoiceUpdatedBy : ''}</div>
     </div>
     <div class="step-actions">
@@ -1263,8 +1427,8 @@ function renderFileSection(title, files, downloadPrefix = null) {
         const dlBtn = (isExcel && downloadPrefix)
           ? `<button class="btn btn-outline btn-xs" data-fid="${f.id}" data-fname="${esc(downloadPrefix + ext)}" onclick="downloadFileAs(+this.dataset.fid, this.dataset.fname)">↓ Download</button>`
           : `<a href="${f.downloadUrl}?token=${State.token}" class="btn btn-outline btn-xs">↓ Download</a>`;
-        const totalLabel = (isExcel && f.amountTotal != null)
-          ? ` &nbsp;·&nbsp; <span style="color:var(--green,#38a169);font-weight:600">${Number(f.amountTotal).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`
+        const totalLabel = isExcel
+          ? ` &nbsp;·&nbsp; <span id="excel-amt-${f.id}" style="color:var(--green,#38a169);font-weight:600">${f.amountVerified === true ? Number(f.amountTotal).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : ''}</span>`
           : '';
         return `<div class="file-item">
           <div><div class="file-name">${esc(name)}</div><div class="file-meta">v${f.version} · ${f.uploadedBy||''}${totalLabel}</div></div>
@@ -1457,7 +1621,7 @@ function showPackingModal(wo) {
 function showPackingDetailsModal(wo) {
   showModal('Upload Packing Details', `
     <div style="background:var(--surface2);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:.82rem">
-      <strong>Invoice:</strong> ${wo.invoiceNumber || '—'}
+      <strong>Invoice:</strong> <strong>${wo.invoiceNumber || '—'}</strong>
       ${wo.invoiceDate ? ` &nbsp;·&nbsp; <strong>Date:</strong> ${formatDate(wo.invoiceDate)}` : ''}
     </div>
     <div class="field-group">
@@ -2637,17 +2801,17 @@ async function _calcExcelInvoiceTotal(file) {
     const found = _findInvoiceColumns(ws, range, visCols);
     if (!found || !('despAmt' in found.colMap)) return null;
     const { dataStartRow, colMap } = found;
+    const allKeys = Object.keys(colMap);
     const rowHidden = ws['!rows'] || [];
     let total = 0;
     for (let r = dataStartRow; r <= range.e.r; r++) {
       if (rowHidden[r]?.hidden) continue;
       const amtStr = _getCellText(ws, r, colMap.despAmt);
       if (_isDash(amtStr) || amtStr === '0') continue;
-      // Skip subtotal rows: require at least one other key column to be non-empty
-      const poVal  = 'po'   in colMap ? _getCellText(ws, r, colMap.po)   : 'x';
-      const srVal  = 'sr'   in colMap ? _getCellText(ws, r, colMap.sr)   : 'x';
-      const partVal = 'part' in colMap ? _getCellText(ws, r, colMap.part) : 'x';
-      if (!poVal && !srVal && !partVal) continue;
+      // Use the same logic as viewExcelInvoice: skip rows where fewer than 2 detected columns have values
+      // (catches total/subtotal rows regardless of which columns exist in this Excel format)
+      const filledCount = allKeys.filter(k => _getCellText(ws, r, colMap[k])).length;
+      if (filledCount < 2) continue;
       const val = parseFloat(amtStr.replace(/,/g, ''));
       if (!isNaN(val)) total += val;
     }
@@ -2730,6 +2894,13 @@ async function viewExcelInvoice(fileId, fileName) {
           return s + (isNaN(v) ? 0 : v);
         }, 0)
       : null;
+
+    // Push the correct total back to the file list entry on the detail page
+    if (grandTotal !== null) {
+      const amtSpan = id('excel-amt-' + fileId);
+      if (amtSpan) amtSpan.textContent = grandTotal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+
     const totalBadge = grandTotal !== null
       ? `<div style="text-align:right;font-size:.85rem;font-weight:700;margin-bottom:8px;color:var(--text)">
            Total DESP. AMT.: <span style="color:var(--green,#38a169)">${grandTotal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
@@ -2783,25 +2954,17 @@ async function viewExcelInvoice(fileId, fileName) {
 
     wrap.focus();
 
-    // Auto-save total to DB if not already saved (covers existing files uploaded before this feature)
+    // Save verified total to DB — always save when invoice view is opened so amountVerified=true is set
     if (grandTotal != null) {
       const woFile = State.currentWo?.excelFiles?.find(f => f.id === fileId);
-      if (woFile && woFile.amountTotal == null) {
+      if (woFile && !woFile.amountVerified) {
         fetch(`/api/files/${fileId}/amount-total?value=${grandTotal}`, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${State.token}` }
         }).then(r => {
           if (r.ok) {
             woFile.amountTotal = grandTotal;
-            const totalFmt = grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            // Update file-meta in DL details in-place (no full re-render needed)
-            document.querySelectorAll(`[data-fid="${fileId}"]`).forEach(btn => {
-              const meta = btn.closest('.file-item')?.querySelector('.file-meta');
-              if (meta && !meta.querySelector('.inv-total-label')) {
-                meta.insertAdjacentHTML('beforeend',
-                  ` &nbsp;·&nbsp; <span class="inv-total-label" style="color:var(--green,#38a169);font-weight:600">${totalFmt}</span>`);
-              }
-            });
+            woFile.amountVerified = true;
           }
         }).catch(() => {});
       }
@@ -2869,7 +3032,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── USER MANAGEMENT ────────────────────────────────────────────────
-const ALL_ROLES = ['ADMIN','GENERAL_MANAGER','STORE','INVOICE_CREATOR','GUEST'];
+const ALL_ROLES = ['ADMIN','GENERAL_MANAGER','STORE','INVOICE_CREATOR','SALES_EXECUTIVE','GUEST'];
 
 async function loadUserManagement() {
   const tbody = id('userTableBody');

@@ -57,6 +57,10 @@ public class FileStorage {
     @Column
     private Double amountTotal;
 
+    @Column(nullable = false, columnDefinition = "BIT(1) DEFAULT 0")
+    @Builder.Default
+    private boolean amountVerified = false;
+
     @PrePersist
     protected void onCreate() { uploadedAt = LocalDateTime.now(); }
 
