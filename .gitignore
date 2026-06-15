@@ -18,3 +18,6 @@ backup-database/
 *.jpeg
 *.jpg
 *.png
+
+# Tally custom data - runtime file, changes frequently
+ameya_custom_data.json
