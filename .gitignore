@@ -10,3 +10,11 @@ target/
 # application secrets if needed
 application-prod.properties
 USER_CREDENTIALS.txt
+
+# Runtime data - not source code
+uploads/
+backup-database/
+.claude/
+*.jpeg
+*.jpg
+*.png
