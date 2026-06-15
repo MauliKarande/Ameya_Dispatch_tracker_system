@@ -340,6 +340,7 @@ function bindNav() {
 
 function navigateTo(page) {
   _focusedRowIndex = -1;
+  removeTallyFloatBtn();
   if (State.page !== page) {
     State.prevPage = State.page;
     history.pushState({ appPage: page }, '');
@@ -1348,6 +1349,7 @@ function renderInvoiceStep(wo, role) {
   const canToggle = role === 'INVOICE_CREATOR';
   const nextDone = wo.readyForDispatchStatus === 'DONE';
   const canRevert = canToggle && isDone && !nextDone;
+  const canCreateInvoice = canToggle && (wo.latestExcelFileId || (wo.excelFiles && wo.excelFiles.length > 0));
   return `<div class="step-row">
     <div>
       <div class="step-label">Invoice ${wo.invoiceNumber ? `<small style="color:var(--text3)">(<strong>${wo.invoiceNumber}</strong>${wo.invoiceDate ? ' · ' + formatDate(wo.invoiceDate) : ''})</small>` : ''}</div>
@@ -1358,6 +1360,7 @@ function renderInvoiceStep(wo, role) {
       ${canToggle && !isDone ? `<button class="btn btn-success btn-xs" id="invoiceDoneBtn">Mark Done</button>` : ''}
       ${canRevert ? `<button class="btn btn-amber btn-xs" id="invoiceRevertBtn">Revert</button>` : ''}
       ${isDone && canToggle ? `<button class="btn btn-outline btn-xs" id="invoiceEditBtn">Edit</button>` : ''}
+      ${canCreateInvoice ? `<button class="btn btn-outline btn-xs" style="background:var(--navy,#1e3a6e);color:#fff;border-color:var(--navy)" id="createTallyInvoiceBtn">🧾 Create Invoice</button>` : ''}
     </div>
   </div>`;
 }
@@ -1535,6 +1538,7 @@ function bindDetailActions(wo) {
   // Invoice
   id('invoiceDoneBtn')?.addEventListener('click', () => showInvoiceModal(wo, false));
   id('invoiceEditBtn')?.addEventListener('click', () => showInvoiceModal(wo, true));
+  id('createTallyInvoiceBtn')?.addEventListener('click', () => openTallyModal(wo));
   id('invoiceRevertBtn')?.addEventListener('click', async () => {
     try {
       const res = await api(`/api/workorders/${wo.id}/invoice/revert`, 'PATCH');
@@ -1574,6 +1578,12 @@ function bindDetailActions(wo) {
   // Files
   id('reviseExcelBtn')?.addEventListener('click', () => showRevisionModal(wo));
   id('uploadPdfBtn')?.addEventListener('click', () => showUploadPdfModal(wo));
+
+  // Floating Create Invoice button for INVOICE_CREATOR
+  removeTallyFloatBtn();
+  if (State.user?.role === 'INVOICE_CREATOR' && wo.excelFiles && wo.excelFiles.length > 0) {
+    injectTallyFloatBtn(wo);
+  }
 }
 
 async function patchStatus(url, successMsg) {
@@ -3309,4 +3319,647 @@ function exportAllWoCsv() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showToast(`Exported ${list.length} records to CSV`, 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TALLY INVOICE MODAL
+// ═══════════════════════════════════════════════════════════════════
+
+State.tallyParts = [];
+State.tallyWoId = null;
+State.tallyCurrentTab = 1;
+State.tallyImportMethod = 'v374';
+State.tallyCurrentWo = null;
+
+function injectTallyFloatBtn(wo) {
+  const btn = document.createElement('button');
+  btn.id = 'tallyFloatBtn';
+  btn.innerHTML = '🧾 Create Invoice';
+  btn.style.cssText = [
+    'position:fixed',
+    'bottom:32px',
+    'right:32px',
+    'z-index:2000',
+    'background:#1e3a6e',
+    'color:#fff',
+    'border:none',
+    'border-radius:10px',
+    'padding:13px 22px',
+    'font-size:14px',
+    'font-weight:700',
+    'cursor:pointer',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.35)',
+    'letter-spacing:.3px',
+    'transition:opacity .15s',
+  ].join(';');
+  btn.onmouseenter = () => btn.style.opacity = '.85';
+  btn.onmouseleave = () => btn.style.opacity = '1';
+  btn.onclick = () => openTallyModal(wo);
+  document.body.appendChild(btn);
+}
+
+function removeTallyFloatBtn() {
+  id('tallyFloatBtn')?.remove();
+}
+
+async function openTallyModal(wo) {
+  State.tallyWoId = wo.id;
+  State.tallyCurrentWo = wo;
+  State.tallyCurrentTab = 1;
+  State.tallyImportMethod = 'v374';
+  State.tallyParts = [];
+
+  const modal = id('tallyInvoiceModal');
+  modal.style.display = 'flex';
+
+  // Reset result box
+  const resultBox = id('tallyResultBox');
+  if (resultBox) { resultBox.style.display = 'none'; resultBox.textContent = ''; }
+
+  // Show loading in parts status
+  const statusEl = id('tallyPartsStatus');
+  if (statusEl) statusEl.textContent = 'Loading Excel data...';
+  const tbody = id('tallyPartsTbody');
+  if (tbody) tbody.innerHTML = '';
+
+  switchTallyTab(1);
+
+  try {
+    const res = await api(`/api/tally/prefill/${wo.id}?method=${State.tallyImportMethod}`, 'GET');
+    const d = res.data;
+
+    // Store parts
+    State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
+
+    // Populate Step 2 fields
+    setVal('tallyVoucherNo', d.nextVoucherNo || '');
+    setVal('tallyVoucherDate', new Date().toISOString().slice(0, 10).replace(/-/g, ''));
+    setVal('tallyPartyName', d.partyTally || '');
+    setVal('tallyPartyCountry', d.partyCountry || '');
+    // Load today's stored rates into inputs; selectTallyCurrByValue below will fill tallyExRate
+    loadTallyDailyRates();
+    setVal('tallyTerms', d.terms || '');
+    setVal('tallyPortL', d.portLoading || '');
+    setVal('tallyPortD', d.portDischarge || '');
+    setVal('tallyFinalDest', d.finalDest || '');
+    setVal('tallyCountryDest', d.countryDest || '');
+    setVal('tallyBuyerName', d.buyerName || '');
+    setVal('tallyBuyerAddr', d.buyerAddress || '');
+
+    // Currency buttons
+    selectTallyCurrByValue(d.currency || 'DOLLAR');
+
+    // AIR/SEA radio
+    const modeEl = document.querySelector(`input[name="tallyMode"][value="${d.airSea || 'AIR'}"]`);
+    if (modeEl) modeEl.checked = true;
+
+    // Step 3 fields — auto-fill from store packing details
+    const packing = parsePackingText(wo.packagingDetails || '');
+    setVal('tallyNetWt',    packing.netWt    || '');
+    setVal('tallyGrossWt',  packing.grossWt  || '');
+    setVal('tallyBoxSize',  packing.boxSize  || '');
+    setVal('tallyBoxType',  packing.boxType  || '01 WOODEN BOX');
+    setVal('tallyMainFolder', d.mainInvoiceFolder || '');
+
+    // Method label
+    updateTallyMethodLabel();
+
+    // Render parts
+    renderTallyParts();
+
+    // Address preview
+    if (d.addressLines && d.addressLines.length) {
+      const preview = id('tallyAddrPreview');
+      if (preview) preview.textContent = (d.mailingName ? d.mailingName + '\n' : '') + d.addressLines.join('\n');
+    }
+
+    // Show parse error if any
+    if (d.parseError) {
+      if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '⚠ ' + d.parseError; }
+    } else {
+      if (statusEl) { statusEl.style.color = ''; statusEl.textContent = `${State.tallyParts.length} part(s) loaded`; }
+    }
+
+  } catch (e) {
+    showToast('Failed to load invoice data: ' + e.message, 'error');
+    closeTallyModal();
+  }
+}
+
+function closeTallyModal() {
+  const modal = id('tallyInvoiceModal');
+  if (modal) modal.style.display = 'none';
+  State.tallyParts = [];
+  State.tallyWoId = null;
+}
+
+function switchTallyTab(n) {
+  State.tallyCurrentTab = n;
+  for (let i = 1; i <= 4; i++) {
+    const step = id('tallyStep' + i);
+    const tab  = id('tallyTab' + i);
+    if (step) step.style.display = i === n ? 'block' : 'none';
+    if (tab) tab.classList.toggle('active', i === n);
+  }
+  if (n === 4) buildTallyReview();
+}
+
+function selectTallyCurr(btn) {
+  document.querySelectorAll('.tally-curr-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyTallyRateForCurrency(btn.dataset.curr || btn.textContent.trim());
+}
+
+function selectTallyCurrByValue(val) {
+  const upper = val.toUpperCase();
+  document.querySelectorAll('.tally-curr-btn').forEach(b => {
+    const curr = (b.dataset.curr || b.textContent.trim()).toUpperCase();
+    const euroVariants = ['EUR', 'EURO', '€'];
+    const isEuro = euroVariants.some(v => upper.startsWith(v)) && euroVariants.some(v => curr.startsWith(v));
+    b.classList.toggle('active', curr === upper || isEuro);
+  });
+  applyTallyRateForCurrency(val);
+}
+
+function getSelectedTallyCurr() {
+  const active = document.querySelector('.tally-curr-btn.active');
+  return active ? (active.dataset.curr || active.textContent.trim()) : 'DOLLAR';
+}
+
+function renderTallyParts() {
+  const tbody = id('tallyPartsTbody');
+  if (!tbody) return;
+
+  const active  = State.tallyParts.filter(p => !p.deleted);
+  const deleted = State.tallyParts.filter(p =>  p.deleted);
+
+  if (active.length === 0 && deleted.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="padding:1rem;color:var(--text3);text-align:center">No parts. Check Excel file.</td></tr>';
+    updateTallyStats();
+    return;
+  }
+
+  const activeRows = active.map(p => {
+    const oi = State.tallyParts.indexOf(p);
+    return `<tr style="border-bottom:1px solid var(--border,#e5e7eb)">
+      <td style="padding:4px 8px;text-align:center"><input type="checkbox" class="tally-part-cb" data-idx="${oi}"></td>
+      <td style="padding:4px 6px;color:var(--text3);font-size:11px">${p.row}</td>
+      <td style="padding:4px 8px;font-weight:500">${esc(p.partNo)}</td>
+      <td style="padding:4px 6px;text-align:right">${p.qty}</td>
+      <td style="padding:4px 8px;text-align:right">${p.amount.toFixed(2)}</td>
+      <td style="padding:4px 8px;color:var(--text3);font-size:12px">${esc(p.poNo || '')}</td>
+      <td style="padding:4px 6px;color:var(--text3);font-size:11px">${esc(p.poSrNo || '')}</td>
+      <td style="padding:4px 6px;text-align:right;color:var(--text3);font-size:12px">${p.ratePc ? p.ratePc.toFixed(2) : ''}</td>
+      <td style="padding:4px 6px;text-align:center">
+        <button class="btn btn-xs" style="background:#fee2e2;color:#dc2626;border:none;cursor:pointer;border-radius:4px;padding:2px 7px"
+          onclick="deleteTallyPart(${oi})">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const deletedRows = deleted.length === 0 ? '' :
+    `<tr><td colspan="9" style="padding:4px 8px;background:#fef2f2;font-size:.78rem;color:#dc2626;font-weight:600">
+      — ${deleted.length} deleted part(s) — click ↩ to restore —
+    </td></tr>` +
+    deleted.map(p => {
+      const oi = State.tallyParts.indexOf(p);
+      return `<tr style="background:#fef2f2;opacity:.65">
+        <td></td>
+        <td style="padding:3px 6px;color:var(--text3);font-size:11px">${p.row}</td>
+        <td style="padding:3px 8px;text-decoration:line-through;color:var(--text3)">${esc(p.partNo)}</td>
+        <td style="padding:3px 6px;text-align:right;color:var(--text3)">${p.qty}</td>
+        <td style="padding:3px 8px;text-align:right;color:var(--text3)">${p.amount.toFixed(2)}</td>
+        <td style="padding:3px 8px;color:var(--text3);font-size:12px">${esc(p.poNo || '')}</td>
+        <td></td><td></td>
+        <td style="padding:3px 6px;text-align:center">
+          <button class="btn btn-xs" style="background:#e0f2fe;color:#0369a1;border:none;cursor:pointer;border-radius:4px;padding:2px 7px"
+            onclick="restoreTallyPart(${oi})">↩</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+  tbody.innerHTML = activeRows + deletedRows;
+  updateTallyStats();
+}
+
+function deleteTallyPart(originalIdx) {
+  if (State.tallyParts[originalIdx]) State.tallyParts[originalIdx].deleted = true;
+  renderTallyParts();
+}
+
+function restoreTallyPart(originalIdx) {
+  if (State.tallyParts[originalIdx]) State.tallyParts[originalIdx].deleted = false;
+  renderTallyParts();
+}
+
+function deleteTallySelected() {
+  document.querySelectorAll('.tally-part-cb:checked').forEach(cb => {
+    const idx = parseInt(cb.dataset.idx);
+    if (State.tallyParts[idx]) State.tallyParts[idx].deleted = true;
+  });
+  renderTallyParts();
+}
+
+function toggleTallySelectAll(cb) {
+  document.querySelectorAll('.tally-part-cb').forEach(c => c.checked = cb.checked);
+}
+
+// ── Check Parts against Tally Stock Items ────────────────────────────────
+async function checkTallyParts() {
+  const panel = id('tallyCheckPanel');
+  if (!panel) return;
+  // Toggle off if already showing
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+
+  const active = State.tallyParts.filter(p => !p.deleted);
+  if (active.length === 0) {
+    panel.innerHTML = '<div style="padding:8px;color:#dc2626;font-size:.85rem">No active parts to check.</div>';
+    panel.style.display = 'block';
+    return;
+  }
+
+  panel.style.display = 'block';
+  panel.innerHTML = `<div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:6px;padding:14px;text-align:center;color:var(--navy,#1e3a6e)">
+    🔄 Checking ${active.length} parts against Tally database…
+  </div>`;
+
+  try {
+    const res = await api('/api/tally/check-parts', 'POST', { parts: active.map(p => p.partNo) });
+    State.tallyCheckResult = res.data;
+    renderTallyCheckPanel();
+  } catch (e) {
+    panel.innerHTML = `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:12px 14px;color:#dc2626;font-size:.85rem">
+      ✗ Cannot reach Tally: ${esc(e.message || 'Make sure Tally is open with HTTP Server enabled on port 9000')}
+    </div>`;
+  }
+}
+
+function renderTallyCheckPanel() {
+  const panel = id('tallyCheckPanel');
+  if (!panel) return;
+  const result   = State.tallyCheckResult || { found: [], notFound: [] };
+  const foundSet = new Set((result.found || []).map(s => s.toUpperCase()));
+  const active   = State.tallyParts.filter(p => !p.deleted);
+  const deleted  = State.tallyParts.filter(p =>  p.deleted);
+  const foundCnt    = active.filter(p => foundSet.has(p.partNo.toUpperCase())).length;
+  const notFoundCnt = active.length - foundCnt;
+
+  const activeRows = active.map(p => {
+    const oi     = State.tallyParts.indexOf(p);
+    const exists = foundSet.has(p.partNo.toUpperCase());
+    return `<tr style="border-bottom:1px solid #e5e7eb;background:${exists ? '#f0fdf4' : '#fef2f2'}">
+      <td style="padding:4px 8px;text-align:center"><input type="checkbox" class="tally-check-cb" data-idx="${oi}" ${!exists ? 'checked' : ''}></td>
+      <td style="padding:4px 8px;font-weight:500;font-size:.82rem">${esc(p.partNo)}</td>
+      <td style="padding:4px 6px;text-align:right;font-size:.8rem">${p.qty}</td>
+      <td style="padding:4px 8px;text-align:right;font-size:.8rem">${p.amount.toFixed(2)}</td>
+      <td style="padding:4px 8px;font-size:.8rem;font-weight:600;color:${exists ? '#15803d' : '#dc2626'}">${exists ? '✓ In Tally' : '✗ Not in Tally'}</td>
+      <td style="padding:4px 6px;text-align:center">
+        <button style="background:#fee2e2;color:#dc2626;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:.75rem"
+          onclick="deleteTallyPart(${oi});renderTallyCheckPanel()">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const deletedRows = deleted.length === 0 ? '' :
+    `<tr><td colspan="6" style="padding:4px 8px;background:#ffe4e4;font-size:.73rem;color:#dc2626;font-weight:600">— ${deleted.length} deleted (↩ to restore) —</td></tr>` +
+    deleted.map(p => {
+      const oi = State.tallyParts.indexOf(p);
+      return `<tr style="background:#fff5f5;opacity:.72">
+        <td style="padding:4px 8px;text-align:center"><input type="checkbox" class="tally-restore-cb" data-idx="${oi}"></td>
+        <td style="padding:4px 8px;text-decoration:line-through;color:var(--text3);font-size:.82rem">${esc(p.partNo)}</td>
+        <td style="padding:4px 6px;text-align:right;font-size:.8rem">${p.qty}</td>
+        <td style="padding:4px 8px;text-align:right;font-size:.8rem">${p.amount.toFixed(2)}</td>
+        <td style="padding:4px 8px;font-size:.8rem;color:#dc2626">⊘ Deleted</td>
+        <td style="padding:4px 6px;text-align:center">
+          <button style="background:#e0f2fe;color:#0369a1;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:.75rem"
+            onclick="restoreTallyPart(${oi});renderTallyCheckPanel()">↩</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+  panel.innerHTML = `
+    <div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:6px;padding:12px 14px">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;flex-wrap:wrap">
+        <div style="font-weight:700;font-size:.88rem;color:var(--navy,#1e3a6e)">Tally Stock Check</div>
+        <span style="background:#dcfce7;color:#15803d;border-radius:4px;padding:2px 7px;font-size:.74rem;font-weight:600">${foundCnt} found</span>
+        ${notFoundCnt ? `<span style="background:#fee2e2;color:#dc2626;border-radius:4px;padding:2px 7px;font-size:.74rem;font-weight:600">${notFoundCnt} NOT in Tally</span>` : ''}
+        <button onclick="deleteTallyCheckSelected()"
+          style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;padding:2px 9px;font-size:.74rem;font-weight:600;cursor:pointer">🗑 Delete Selected</button>
+        ${notFoundCnt ? `<button onclick="deleteAllNotInTally()"
+          style="background:#fff3cd;color:#856404;border:1px solid #ffc107;border-radius:5px;padding:2px 9px;font-size:.74rem;font-weight:600;cursor:pointer">⚠ Delete All Not-In-Tally (${notFoundCnt})</button>` : ''}
+        ${deleted.length ? `<button onclick="restoreTallyCheckSelected()"
+          style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:5px;padding:2px 9px;font-size:.74rem;font-weight:600;cursor:pointer">↩ Restore Selected</button>` : ''}
+      </div>
+      <div style="max-height:270px;overflow-y:auto;border:1px solid #c7d2fe;border-radius:4px">
+        <table style="width:100%;font-size:.82rem;border-collapse:collapse">
+          <thead style="position:sticky;top:0;z-index:1">
+            <tr style="background:#c7d2fe">
+              <th style="padding:4px 8px;width:28px"><input type="checkbox" title="Select all"
+                onchange="document.querySelectorAll('.tally-check-cb,.tally-restore-cb').forEach(c=>c.checked=this.checked)"></th>
+              <th style="padding:4px 10px;text-align:left">Part No.</th>
+              <th style="padding:4px 6px;text-align:right">Qty</th>
+              <th style="padding:4px 8px;text-align:right">Amount</th>
+              <th style="padding:4px 10px;text-align:left">Status</th>
+              <th style="padding:4px 6px"></th>
+            </tr>
+          </thead>
+          <tbody>${activeRows}${deletedRows}</tbody>
+        </table>
+      </div>
+      ${result.totalInTally !== undefined ? `<div style="margin-top:5px;font-size:.72rem;color:var(--text3)">Tally has ${result.totalInTally} total stock items</div>` : ''}
+    </div>`;
+  panel.style.display = 'block';
+}
+
+function deleteTallyCheckSelected() {
+  document.querySelectorAll('.tally-check-cb:checked').forEach(cb => {
+    const idx = parseInt(cb.dataset.idx);
+    if (State.tallyParts[idx]) State.tallyParts[idx].deleted = true;
+  });
+  renderTallyParts();
+  renderTallyCheckPanel();
+}
+
+function restoreTallyCheckSelected() {
+  document.querySelectorAll('.tally-restore-cb:checked').forEach(cb => {
+    const idx = parseInt(cb.dataset.idx);
+    if (State.tallyParts[idx]) State.tallyParts[idx].deleted = false;
+  });
+  renderTallyParts();
+  renderTallyCheckPanel();
+}
+
+function deleteAllNotInTally() {
+  const notFound = new Set((State.tallyCheckResult?.notFound || []).map(s => s.toUpperCase()));
+  State.tallyParts.forEach(p => { if (!p.deleted && notFound.has(p.partNo.toUpperCase())) p.deleted = true; });
+  renderTallyParts();
+  renderTallyCheckPanel();
+}
+
+// ── Daily Currency Rate Cache (localStorage, resets per day) ─────────────
+function getTallyRatesKey() {
+  return 'tallyRates_' + new Date().toISOString().slice(0, 10);
+}
+
+function loadTallyDailyRates() {
+  const rates = JSON.parse(localStorage.getItem(getTallyRatesKey()) || '{}');
+  State.tallyDailyRates = rates;
+  if (id('tallyRateDollar')) id('tallyRateDollar').value = rates.DOLLAR || '';
+  if (id('tallyRateEuro'))   id('tallyRateEuro').value   = rates.EUR    || '';
+  if (id('tallyRatePound'))  id('tallyRatePound').value  = rates.POUND  || '';
+  const tag = id('tallyRatesSavedTag');
+  if (tag) {
+    const d = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+    const hasAny = Object.keys(rates).length > 0;
+    tag.textContent = hasAny ? `✓ Saved for ${d}` : `Not set for ${d}`;
+    tag.style.color = hasAny ? '#15803d' : '#e65100';
+  }
+}
+
+function saveTallyRate(curr, value) {
+  if (!value || isNaN(parseFloat(value)) || parseFloat(value) <= 0) return;
+  const rate  = parseFloat(value);
+  const key   = getTallyRatesKey();
+  const rates = JSON.parse(localStorage.getItem(key) || '{}');
+  rates[curr.toUpperCase()] = rate;
+  localStorage.setItem(key, JSON.stringify(rates));
+  State.tallyDailyRates = rates;
+  // If this currency is currently selected, update the exchange rate field
+  const sel = getSelectedTallyCurr().toUpperCase();
+  const eu  = ['EUR','EURO','€'];
+  const match = sel === curr.toUpperCase()
+    || (eu.some(v => sel.startsWith(v)) && eu.some(v => curr.toUpperCase().startsWith(v)));
+  if (match) setVal('tallyExRate', rate);
+  const tag = id('tallyRatesSavedTag');
+  if (tag) { const d = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}); tag.textContent = `✓ Saved for ${d}`; tag.style.color='#15803d'; }
+}
+
+function applyTallyRateForCurrency(currKey) {
+  const rates = State.tallyDailyRates || {};
+  const up = (currKey || '').toUpperCase();
+  let rate = null;
+  if (up === 'DOLLAR' || up === 'USD') rate = rates['DOLLAR'];
+  else if (up.startsWith('EUR') || up === '€') rate = rates['EUR'];
+  else if (up === 'POUND' || up === 'GBP') rate = rates['POUND'];
+  if (rate) setVal('tallyExRate', rate);
+}
+
+async function savePartyToJson() {
+  const req = collectTallyRequest();
+  if (!req.partyTally) { showToast('Party name is required', 'error'); return; }
+  try {
+    await api('/api/tally/save-party', 'POST', req);
+    showToast('Party details saved to JSON', 'success');
+  } catch (e) {
+    showToast('Save failed: ' + (e.message || 'unknown error'), 'error');
+  }
+}
+
+function updateTallyStats() {
+  const active = State.tallyParts.filter(p => !p.deleted);
+  const total = active.reduce((s, p) => s + p.amount, 0);
+  const statsEl = id('tallyPartsStats');
+  if (statsEl) statsEl.textContent = `${active.length} part(s) · Total: ${total.toFixed(2)}`;
+}
+
+function buildTallyReview() {
+  const active = State.tallyParts.filter(p => !p.deleted);
+  const total = active.reduce((s, p) => s + p.amount, 0);
+  const curr = getSelectedTallyCurr();
+  const mode = document.querySelector('input[name="tallyMode"]:checked')?.value || 'AIR';
+
+  const lines = [
+    `Voucher No : ${getVal('tallyVoucherNo')}`,
+    `Date       : ${getVal('tallyVoucherDate')}`,
+    `Party      : ${getVal('tallyPartyName')}`,
+    `Country    : ${getVal('tallyPartyCountry')}`,
+    `Currency   : ${curr}  (Rate: ${getVal('tallyExRate')})`,
+    `Mode       : ${mode}`,
+    `Terms      : ${getVal('tallyTerms')}`,
+    `Port Load  : ${getVal('tallyPortL')}`,
+    `Port Disc  : ${getVal('tallyPortD')}`,
+    `Final Dest : ${getVal('tallyFinalDest')}`,
+    `Cty Dest   : ${getVal('tallyCountryDest')}`,
+    `Buyer      : ${getVal('tallyBuyerName')}`,
+    `Buyer Addr : ${getVal('tallyBuyerAddr')}`,
+    ``,
+    `Net Wt     : ${getVal('tallyNetWt')} kg`,
+    `Gross Wt   : ${getVal('tallyGrossWt')} kg`,
+    `Box Size   : ${getVal('tallyBoxSize')}`,
+    `Box Type   : ${getVal('tallyBoxType')}`,
+    ``,
+    `Parts (${active.length}):`,
+    ...active.map(p => `  Row ${p.row}: ${p.partNo}  qty=${p.qty}  amt=${p.amount.toFixed(2)}  po=${p.poNo || '—'}`),
+    ``,
+    `Total Amount: ${total.toFixed(2)} ${curr}`,
+    `Folder: ${getVal('tallyMainFolder')}`,
+  ];
+
+  const reviewEl = id('tallyReviewBox');
+  if (reviewEl) reviewEl.textContent = lines.join('\n');
+}
+
+function collectTallyRequest() {
+  const mode = document.querySelector('input[name="tallyMode"]:checked')?.value || 'AIR';
+  return {
+    parts: State.tallyParts.filter(p => !p.deleted),
+    voucherNumber: getVal('tallyVoucherNo'),
+    voucherDate: getVal('tallyVoucherDate').replace(/-/g, ''),
+    partyTally: getVal('tallyPartyName'),
+    partyCountry: getVal('tallyPartyCountry'),
+    currency: getSelectedTallyCurr(),
+    exchangeRate: parseFloat(getVal('tallyExRate') || '1'),
+    airSea: mode,
+    terms: getVal('tallyTerms'),
+    portLoading: getVal('tallyPortL'),
+    portDischarge: getVal('tallyPortD'),
+    finalDest: getVal('tallyFinalDest'),
+    countryDest: getVal('tallyCountryDest'),
+    buyerName: getVal('tallyBuyerName'),
+    buyerAddress: getVal('tallyBuyerAddr'),
+    netWeight: getVal('tallyNetWt'),
+    grossWeight: getVal('tallyGrossWt'),
+    boxSize: getVal('tallyBoxSize'),
+    boxType: getVal('tallyBoxType'),
+    mainInvoiceFolder: getVal('tallyMainFolder'),
+  };
+}
+
+function showTallyResult(text, ok) {
+  const box = id('tallyResultBox');
+  if (!box) return;
+  box.style.display = 'block';
+  box.style.background = ok ? '#f0fdf4' : '#fef2f2';
+  box.style.border = `1px solid ${ok ? '#86efac' : '#fca5a5'}`;
+  box.style.color = ok ? '#15803d' : '#dc2626';
+  box.style.whiteSpace = 'pre-wrap';
+  box.textContent = text;
+}
+
+async function sendTallyInvoice() {
+  const req = collectTallyRequest();
+  if (!req.parts.length) { showToast('No parts to send', 'error'); return; }
+  if (!req.voucherNumber) { showToast('Voucher number is required', 'error'); return; }
+
+  showTallyResult('Sending to Tally...', true);
+
+  try {
+    const res = await api('/api/tally/send', 'POST', req);
+    const d = res.data;
+    const ok = d.status === 'CREATED' || d.status === 'ALTERED';
+    showTallyResult(
+      ok
+        ? `✓ Invoice ${d.status} in Tally (Voucher: ${req.voucherNumber})`
+        : `✗ Tally responded: ${d.status}\n${d.tallyResponse || ''}`,
+      ok
+    );
+    showToast(ok ? `Invoice ${req.voucherNumber} sent to Tally` : 'Tally returned: ' + d.status, ok ? 'success' : 'error');
+  } catch (e) {
+    showTallyResult('✗ ' + e.message, false);
+    showToast('Send failed: ' + e.message, 'error');
+  }
+}
+
+async function createTallyFolders() {
+  const req = collectTallyRequest();
+  if (!req.voucherNumber) { showToast('Voucher number is required', 'error'); return; }
+
+  showTallyResult('Creating folders...', true);
+
+  try {
+    const res = await api('/api/tally/create-folders', 'POST', req);
+    const d = res.data;
+    const ok = d.status === 'OK';
+    showTallyResult(ok ? '✓ Folders created:\n' + (d.folderPath || '') : '✗ ' + (d.message || 'Unknown error'), ok);
+    showToast(ok ? 'Invoice folders created' : 'Folder creation failed', ok ? 'success' : 'error');
+  } catch (e) {
+    showTallyResult('✗ ' + e.message, false);
+    showToast('Folder creation failed: ' + e.message, 'error');
+  }
+}
+
+function onTallyModeChange() {
+  if (State.tallyCurrentTab === 4) buildTallyReview();
+}
+
+async function switchTallyMethod() {
+  State.tallyImportMethod = State.tallyImportMethod === 'v374' ? 'v35' : 'v374';
+  updateTallyMethodLabel();
+
+  const statusEl = id('tallyPartsStatus');
+  const tbody = id('tallyPartsTbody');
+  if (statusEl) statusEl.textContent = `Re-loading with ${State.tallyImportMethod.toUpperCase()}…`;
+  if (tbody) tbody.innerHTML = '';
+  State.tallyParts = [];
+  updateTallyStats();
+
+  try {
+    const res = await api(`/api/tally/prefill/${State.tallyWoId}?method=${State.tallyImportMethod}`, 'GET');
+    const d = res.data;
+    State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
+    renderTallyParts();
+    if (d.parseError) {
+      if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '⚠ ' + d.parseError; }
+    } else {
+      if (statusEl) { statusEl.style.color = ''; statusEl.textContent = `${State.tallyParts.length} part(s) loaded (${State.tallyImportMethod.toUpperCase()})`; }
+    }
+  } catch (e) {
+    showToast('Re-parse failed: ' + e.message, 'error');
+    if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '✗ ' + e.message; }
+  }
+}
+
+function updateTallyMethodLabel() {
+  const lbl = id('tallyMethodLabel');
+  const btn = id('tallyMethodBtn');
+  if (!lbl || !btn) return;
+  if (State.tallyImportMethod === 'v374') {
+    lbl.textContent = 'Import: V3.7.4 (default)';
+    btn.textContent = '⚠ Wrong parts? Switch to V3.5';
+    btn.style.background = '#e65100';
+  } else {
+    lbl.textContent = 'Import: V3.5 (strict part filter)';
+    btn.textContent = '↩ Switch back to V3.7.4';
+    btn.style.background = '#1e3a6e';
+  }
+}
+
+function parsePackingText(text) {
+  if (!text) return {};
+  const t = text.toUpperCase();
+  const result = {};
+
+  // Net weight — "NET WT. 10.000" or "NET WT : 10"
+  let m = t.match(/NET\s+WT\.?\s*[:\-]?\s*([\d]+(?:[.,][\d]+)?)/);
+  if (m) result.netWt = m[1].replace(',', '.');
+
+  // Gross weight — "TOTAL GR. WT : 13.000" or "GR. WT" or "GROSS WT"
+  m = t.match(/TOTAL\s+GR\.?\s*\.?\s*WT\.?\s*[:\-]?\s*([\d]+(?:[.,][\d]+)?)/);
+  if (!m) m = t.match(/GR(?:OSS)?\.?\s*WT\.?\s*[:\-]?\s*([\d]+(?:[.,][\d]+)?)/);
+  if (m) result.grossWt = m[1].replace(',', '.');
+
+  // Box size — "BOX SIZE : 13"X13"X06"" or "BOX SIZE - 12'' X 9''X5''"
+  m = text.match(/BOX\s+SIZE\s*[-:]\s*([^\n\r]+)/i);
+  if (m) result.boxSize = m[1].trim().replace(/\s+/g, ' ');
+
+  // Box type — "NO. OF BOXES : 01 CORRUGATED BOX" → "01 CORRUGATED BOX"
+  m = t.match(/NO\.?\s*OF\s*BOXES\s*[:\-]?\s*(\d+\s+[A-Z]+(?:\s+[A-Z]+)*BOX)/);
+  if (m) {
+    result.boxType = m[1].trim().replace(/\.$/, '');
+  } else {
+    // Standalone box type: "COURAGATED BOX" / "CORRUGATED BOX" / "WOODEN BOX"
+    m = t.match(/\b(\d+\s+)?(?:CORR(?:UGATED)?|COURAGATED|WOODEN|PLYWOOD)\s+BOX/);
+    if (m) result.boxType = m[0].trim().replace(/\.$/, '');
+  }
+
+  return result;
+}
+
+function setVal(elId, val) {
+  const el = id(elId);
+  if (el) el.value = val ?? '';
+}
+
+function getVal(elId) {
+  return id(elId)?.value?.trim() ?? '';
 }

@@ -424,5 +424,268 @@
     });
   }
 </script>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TALLY CREATE INVOICE MODAL
+     ════════════════════════════════════════════════════════════ -->
+<div id="tallyInvoiceModal" class="modal-overlay" style="display:none;z-index:3000">
+  <div class="modal-box" style="max-width:980px;width:96%;max-height:92vh;display:flex;flex-direction:column;padding:0">
+
+    <!-- Header -->
+    <div style="background:var(--navy,#1e3a6e);color:#fff;padding:16px 22px;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:12px;flex-shrink:0">
+      <span style="font-size:1.3rem">🧾</span>
+      <div>
+        <div style="font-size:1.05rem;font-weight:700">Create Tally Invoice</div>
+        <div id="tallyModalSubtitle" style="font-size:.8rem;opacity:.75"></div>
+      </div>
+      <button onclick="closeTallyModal()" style="margin-left:auto;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:30px;height:30px;font-size:1.1rem;cursor:pointer;line-height:1">×</button>
+    </div>
+
+    <!-- Step tabs -->
+    <div style="display:flex;background:#f0f2f5;border-bottom:1px solid #d0d6e0;flex-shrink:0">
+      <button class="tally-tab active" id="tallyTab1" onclick="switchTallyTab(1)">① Parts</button>
+      <button class="tally-tab" id="tallyTab2" onclick="switchTallyTab(2)">② Invoice Details</button>
+      <button class="tally-tab" id="tallyTab3" onclick="switchTallyTab(3)">③ Packing</button>
+      <button class="tally-tab" id="tallyTab4" onclick="switchTallyTab(4)">④ Review & Send</button>
+    </div>
+
+    <!-- Scrollable body -->
+    <div style="overflow-y:auto;flex:1;padding:20px 22px">
+
+      <!-- ─── STEP 1: PARTS ─────────────────────────────── -->
+      <div id="tallyStep1">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <div id="tallyPartsStatus" style="font-size:.9rem;color:var(--text2,#5a6478)">Loading parts from Excel…</div>
+          <div id="tallyPartsStats" style="margin-left:auto;font-size:.85rem;font-weight:600;color:var(--navy,#1e3a6e)"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:7px 12px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px">
+          <span id="tallyMethodLabel" style="font-size:.8rem;font-weight:600;color:#7a5800">Import: V3.7.4 (default)</span>
+          <button id="tallyMethodBtn" onclick="switchTallyMethod()"
+            style="margin-left:auto;background:#e65100;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:.78rem;font-weight:700;cursor:pointer">
+            ⚠ Wrong parts? Switch to V3.5
+          </button>
+        </div>
+        <!-- Toolbar: select-all + bulk-delete + check -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:5px;font-size:.82rem;cursor:pointer;user-select:none">
+            <input type="checkbox" id="tallySelectAllCb" onchange="toggleTallySelectAll(this)"> Select All
+          </label>
+          <button onclick="deleteTallySelected()"
+            style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;padding:3px 11px;font-size:.78rem;font-weight:600;cursor:pointer">
+            🗑 Delete Selected
+          </button>
+          <button onclick="checkTallyParts()"
+            style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:5px;padding:3px 11px;font-size:.78rem;font-weight:600;cursor:pointer">
+            📊 Check Parts
+          </button>
+        </div>
+        <!-- Check parts summary panel (hidden by default) -->
+        <div id="tallyCheckPanel" style="display:none;margin-bottom:10px"></div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem" id="tallyPartsTable">
+            <thead>
+              <tr style="background:var(--navy,#1e3a6e);color:#fff">
+                <th style="padding:7px 8px;text-align:center;width:28px">☐</th>
+                <th style="padding:7px 6px;text-align:center;width:36px">Row</th>
+                <th style="padding:7px 10px;text-align:left">Part No.</th>
+                <th style="padding:7px 6px;text-align:center">Qty</th>
+                <th style="padding:7px 10px;text-align:right">Amount</th>
+                <th style="padding:7px 8px;text-align:center">PO No.</th>
+                <th style="padding:7px 8px;text-align:center">PO Sr No.</th>
+                <th style="padding:7px 6px;text-align:right">Rate/Pc</th>
+                <th style="padding:7px 6px;text-align:center">Del</th>
+              </tr>
+            </thead>
+            <tbody id="tallyPartsTbody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:14px;display:flex;justify-content:flex-end">
+          <button class="btn btn-primary" onclick="switchTallyTab(2)">Next: Invoice Details →</button>
+        </div>
+      </div>
+
+      <!-- ─── STEP 2: INVOICE DETAILS ───────────────────── -->
+      <div id="tallyStep2" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="tally-field">
+            <label>Voucher Number *</label>
+            <input id="tallyVoucherNo" type="text" class="tally-input" placeholder="e.g. 26086">
+          </div>
+          <div class="tally-field">
+            <label>Invoice Date (YYYYMMDD) *</label>
+            <input id="tallyVoucherDate" type="text" class="tally-input" placeholder="20260612">
+          </div>
+          <div class="tally-field" style="grid-column:1/-1">
+            <label style="display:flex;align-items:center;gap:10px">
+              Party (Tally Exact Name) *
+              <button onclick="savePartyToJson()"
+                style="margin-left:auto;background:#e0f7fa;color:#00695c;border:1px solid #80cbc4;border-radius:5px;padding:2px 10px;font-size:.75rem;font-weight:600;cursor:pointer">
+                💾 Save Party to JSON
+              </button>
+            </label>
+            <input id="tallyPartyName" type="text" class="tally-input">
+          </div>
+          <div class="tally-field">
+            <label>Country of Destination</label>
+            <input id="tallyPartyCountry" type="text" class="tally-input">
+          </div>
+          <div class="tally-field" style="grid-column:1/-1">
+            <label style="display:flex;align-items:center;gap:8px">
+              Currency
+              <span id="tallyRatesSavedTag" style="font-size:.72rem;margin-left:4px"></span>
+            </label>
+            <div style="display:flex;gap:8px;margin-top:6px" id="tallyCurrencyBtns">
+              <button class="tally-curr-btn active" data-curr="DOLLAR" onclick="selectTallyCurr(this)">DOLLAR</button>
+              <button class="tally-curr-btn" data-curr="POUND" onclick="selectTallyCurr(this)">POUND</button>
+              <button class="tally-curr-btn" data-curr="EUR" onclick="selectTallyCurr(this)">EURO (€)</button>
+            </div>
+            <!-- Today's rates — saved per day in localStorage, auto-filled on currency select -->
+            <div style="display:flex;gap:10px;margin-top:9px;flex-wrap:wrap;align-items:center;padding:7px 10px;background:#f8f9fb;border:1px solid #e0e7ef;border-radius:5px">
+              <span style="font-size:.74rem;font-weight:600;color:var(--text3)">Today's rates (₹):</span>
+              <label style="font-size:.78rem;display:flex;align-items:center;gap:4px">
+                $ <input id="tallyRateDollar" type="number" step="0.01" min="0"
+                  style="width:75px;padding:3px 6px;border:1px solid #d0d6e0;border-radius:4px;font-size:.82rem"
+                  oninput="saveTallyRate('DOLLAR',this.value)" placeholder="84.50">
+              </label>
+              <label style="font-size:.78rem;display:flex;align-items:center;gap:4px">
+                € <input id="tallyRateEuro" type="number" step="0.01" min="0"
+                  style="width:75px;padding:3px 6px;border:1px solid #d0d6e0;border-radius:4px;font-size:.82rem"
+                  oninput="saveTallyRate('EUR',this.value)" placeholder="91.20">
+              </label>
+              <label style="font-size:.78rem;display:flex;align-items:center;gap:4px">
+                £ <input id="tallyRatePound" type="number" step="0.01" min="0"
+                  style="width:75px;padding:3px 6px;border:1px solid #d0d6e0;border-radius:4px;font-size:.82rem"
+                  oninput="saveTallyRate('POUND',this.value)" placeholder="107.30">
+              </label>
+              <span style="font-size:.71rem;color:var(--text3)">Auto-fills exchange rate · resets next day</span>
+            </div>
+          </div>
+          <div class="tally-field">
+            <label>Exchange Rate (₹ per unit) *</label>
+            <input id="tallyExRate" type="number" step="0.01" class="tally-input" placeholder="e.g. 84.50">
+          </div>
+          <div class="tally-field">
+            <label>Shipment Mode</label>
+            <div style="display:flex;gap:16px;margin-top:8px">
+              <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer">
+                <input type="radio" name="tallyMode" value="AIR" checked onchange="onTallyModeChange()"> AIR
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer">
+                <input type="radio" name="tallyMode" value="SEA" onchange="onTallyModeChange()"> SEA
+              </label>
+            </div>
+          </div>
+          <div class="tally-field">
+            <label>Terms of Delivery</label>
+            <input id="tallyTerms" type="text" class="tally-input" placeholder="EX-WORKS PUNE">
+          </div>
+          <div class="tally-field">
+            <label>Port of Loading</label>
+            <input id="tallyPortL" type="text" class="tally-input" placeholder="MUMBAI">
+          </div>
+          <div class="tally-field">
+            <label>Port of Discharge</label>
+            <input id="tallyPortD" type="text" class="tally-input">
+          </div>
+          <div class="tally-field">
+            <label>Final Destination</label>
+            <input id="tallyFinalDest" type="text" class="tally-input">
+          </div>
+          <div class="tally-field">
+            <label>Country of Destination</label>
+            <input id="tallyCountryDest" type="text" class="tally-input">
+          </div>
+          <div class="tally-field" style="grid-column:1/-1">
+            <label>Buyer Name (if different from consignee)</label>
+            <input id="tallyBuyerName" type="text" class="tally-input">
+          </div>
+          <div class="tally-field" style="grid-column:1/-1">
+            <label>Buyer Address</label>
+            <input id="tallyBuyerAddr" type="text" class="tally-input">
+          </div>
+        </div>
+        <div id="tallyAddrPreview" style="margin-top:10px;background:#f8f9fb;border:1px solid #d0d6e0;border-radius:6px;padding:10px;font-size:.82rem;color:#5a6478;font-family:monospace"></div>
+        <div style="margin-top:14px;display:flex;justify-content:space-between">
+          <button class="btn btn-outline" onclick="switchTallyTab(1)">← Back</button>
+          <button class="btn btn-primary" onclick="switchTallyTab(3)">Next: Packing →</button>
+        </div>
+      </div>
+
+      <!-- ─── STEP 3: PACKING ───────────────────────────── -->
+      <div id="tallyStep3" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="tally-field">
+            <label>Net Weight (kg)</label>
+            <input id="tallyNetWt" type="text" class="tally-input" placeholder="e.g. 12.5">
+          </div>
+          <div class="tally-field">
+            <label>Gross Weight (kg)</label>
+            <input id="tallyGrossWt" type="text" class="tally-input" placeholder="e.g. 15.0">
+          </div>
+          <div class="tally-field">
+            <label>Box Size (paste as-is)</label>
+            <input id="tallyBoxSize" type="text" class="tally-input" placeholder='e.g. 12"×8"×6" or 30x20x15 cm'>
+          </div>
+          <div class="tally-field">
+            <label>Box Type</label>
+            <input id="tallyBoxType" type="text" class="tally-input" value="01 WOODEN BOX">
+          </div>
+          <div class="tally-field" style="grid-column:1/-1">
+            <label>Main Invoice Folder Path</label>
+            <input id="tallyMainFolder" type="text" class="tally-input" placeholder="C:/Users/.../MY FOLDER FOR EXPORT INV">
+          </div>
+        </div>
+        <div style="margin-top:14px;display:flex;justify-content:space-between">
+          <button class="btn btn-outline" onclick="switchTallyTab(2)">← Back</button>
+          <button class="btn btn-primary" onclick="switchTallyTab(4)">Next: Review →</button>
+        </div>
+      </div>
+
+      <!-- ─── STEP 4: REVIEW & SEND ─────────────────────── -->
+      <div id="tallyStep4" style="display:none">
+        <pre id="tallyReviewBox" style="background:#f8f9fb;border:1px solid #d0d6e0;border-radius:6px;padding:14px;font-size:.82rem;line-height:1.6;white-space:pre-wrap;overflow-x:auto;max-height:260px;overflow-y:auto"></pre>
+
+        <div style="margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+          <button class="btn btn-outline" onclick="switchTallyTab(3)">← Back</button>
+          <button id="tallySendBtn" class="btn btn-primary" style="background:var(--orange,#e85a24)"
+                  onclick="sendTallyInvoice()">🚀 Send to Tally</button>
+          <button id="tallyFolderBtn" class="btn btn-success" onclick="createTallyFolders()">📁 Create Folders</button>
+        </div>
+
+        <div id="tallyResultBox" style="margin-top:14px;display:none;padding:12px;border-radius:6px;font-size:.88rem"></div>
+      </div>
+
+    </div><!-- /scrollable body -->
+  </div>
+</div>
+
+<style>
+.tally-tab {
+  flex:1;padding:11px 4px;border:none;background:transparent;
+  cursor:pointer;font-size:.88rem;font-weight:600;color:var(--text2,#5a6478);
+  border-bottom:3px solid transparent;transition:all .15s
+}
+.tally-tab.active {
+  color:var(--navy,#1e3a6e);border-bottom-color:var(--navy,#1e3a6e);background:#fff
+}
+.tally-field { display:flex;flex-direction:column;gap:4px }
+.tally-field label { font-size:.82rem;font-weight:600;color:var(--text2,#5a6478) }
+.tally-input {
+  padding:8px 10px;border:1px solid #d0d6e0;border-radius:5px;
+  font-size:.9rem;color:var(--text,#1a1a2e);background:#fff;
+  transition:border-color .15s
+}
+.tally-input:focus { outline:none;border-color:var(--navy,#1e3a6e) }
+.tally-curr-btn {
+  padding:6px 14px;border:1.5px solid #d0d6e0;border-radius:5px;
+  cursor:pointer;font-weight:600;font-size:.85rem;background:#fff;
+  color:var(--text2,#5a6478);transition:all .15s
+}
+.tally-curr-btn.active {
+  background:var(--success,#1a9e4e);color:#fff;border-color:var(--success,#1a9e4e)
+}
+#tallyPartsTable tbody tr:nth-child(even) { background:#f8f9fb }
+#tallyPartsTable td { padding:6px 8px;border-bottom:1px solid #eee }
+</style>
 </body>
 </html>
