@@ -248,7 +248,14 @@ public class TallyInvoiceService {
 
         // Inventory entries
         StringBuilder invXml = new StringBuilder();
+        int partIdx = 0;
         for (TallyPartDTO p : parts) {
+            boolean isFirstPart = partIdx++ == 0;
+            // Non-Sulzer: only first part carries HSN; subsequent parts get empty HSN fields
+            String pHsnCode  = (isSulzer || isFirstPart) ? hsnCode  : "";
+            String pHsnDesc  = (isSulzer || isFirstPart) ? hsnDesc  : "";
+            String pDrawback = (isSulzer || isFirstPart) ? drawback : "";
+            String pHsnSel   = (isSulzer || isFirstPart) ? hsnSel  : "";
             double f   = p.getAmount();
             double inr = round2(f * ex);
             int qty    = Math.max(1, p.getQty());
@@ -311,13 +318,13 @@ public class TallyInvoiceService {
                         </UDF:AMEYAITEMRATEPCSTO.LIST>
                        </ALLINVENTORYENTRIES.LIST>
                     """,
-                    escXml(p.getPartNo()), salesLedger, hsnCode, hsnDesc,
+                    escXml(p.getPartNo()), salesLedger, pHsnCode, pHsnDesc,
                     curr, ratePc, ratePcInr,
                     curr, f, ex, curr, inr, qty, qty,
                     curr, f, ex, curr, inr, qty, qty,
                     salesLedger,
                     curr, f, ex, curr, inr,
-                    hsnSel, hsnDesc, drawback, hsnCode,
+                    pHsnSel, pHsnDesc, pDrawback, pHsnCode,
                     poNo, poSrNo, poSrNo, ratePc));
         }
 
@@ -386,6 +393,9 @@ public class TallyInvoiceService {
                     <UDF:PROFINVBUYADDSTO.LIST DESC="`PROFINVBUYAddSTO`" ISLIST="YES" TYPE="String" INDEX="8005">
                      <UDF:PROFINVBUYADDSTO DESC="`PROFINVBUYAddSTO`">%s</UDF:PROFINVBUYADDSTO>
                     </UDF:PROFINVBUYADDSTO.LIST>
+                    <UDF:PROPOSTSHIPPRECARRRIAGE.LIST DESC="`PROpostShipPrecarrriage`" ISLIST="YES" TYPE="String" INDEX="8011">
+                     <UDF:PROPOSTSHIPPRECARRRIAGE DESC="`PROpostShipPrecarrriage`">BY ROAD</UDF:PROPOSTSHIPPRECARRRIAGE>
+                    </UDF:PROPOSTSHIPPRECARRRIAGE.LIST>
                     <UDF:PROPOSTSHIPVESSELNAME.LIST DESC="`PROpostShipVesselName`" ISLIST="YES" TYPE="String" INDEX="8013">
                      <UDF:PROPOSTSHIPVESSELNAME DESC="`PROpostShipVesselName`">%s</UDF:PROPOSTSHIPVESSELNAME>
                     </UDF:PROPOSTSHIPVESSELNAME.LIST>
