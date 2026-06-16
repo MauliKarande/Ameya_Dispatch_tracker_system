@@ -3834,12 +3834,87 @@ function applyTallyRateForCurrency(currKey) {
 async function savePartyToJson() {
   const req = collectTallyRequest();
   if (!req.partyTally) { showToast('Party name is required', 'error'); return; }
+
+  const currentMode = req.airSea || 'AIR';
+  const otherMode   = currentMode === 'AIR' ? 'SEA' : 'AIR';
+
+  // Normalise form data to snake_case for display
+  const curData = {
+    terms: req.terms, port_loading: req.portLoading, port_discharge: req.portDischarge,
+    final_dest: req.finalDest, country_dest: req.countryDest,
+    buyer_name: req.buyerName, buyer_address: req.buyerAddress
+  };
+
+  // Load the other mode's saved data from backend
+  let otherData = {};
   try {
-    await api('/api/tally/save-party', 'POST', req);
-    showToast('Party details saved to JSON', 'success');
-  } catch (e) {
-    showToast('Save failed: ' + (e.message || 'unknown error'), 'error');
+    const r = await api(`/api/tally/export-details?party=${encodeURIComponent(req.partyTally)}&mode=${encodeURIComponent(otherMode)}`, 'GET');
+    otherData = r.data || {};
+  } catch (_) {}
+
+  const airData = currentMode === 'AIR' ? curData : otherData;
+  const seaData = currentMode === 'SEA' ? curData : otherData;
+
+  function fld(eid, label, val, fullRow) {
+    return `<div style="${fullRow ? 'grid-column:1/-1;' : ''}display:flex;flex-direction:column;gap:2px">
+      <label style="font-size:.72rem;font-weight:600;color:#4b5563">${label}</label>
+      <input id="${eid}" type="text" value="${esc(val || '')}"
+        style="padding:4px 7px;border:1px solid #d1d5db;border-radius:4px;font-size:.8rem;width:100%;box-sizing:border-box">
+    </div>`;
   }
+
+  function modeBlock(pfx, mode, data) {
+    const air = mode === 'AIR';
+    return `<div style="background:${air?'#f0f9ff':'#f0fdf4'};border:1px solid ${air?'#bae6fd':'#bbf7d0'};border-radius:6px;padding:10px 12px">
+      <div style="font-size:.8rem;font-weight:700;color:${air?'#0369a1':'#15803d'};margin-bottom:8px">${air?'✈':'🚢'} ${mode} Shipment</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        ${fld(pfx+'-terms',    'Terms of Delivery',         data.terms         || '')}
+        ${fld(pfx+'-portL',    'Port of Loading',            data.port_loading  || '')}
+        ${fld(pfx+'-portD',    'Port of Discharge',          data.port_discharge|| '')}
+        ${fld(pfx+'-finalDest','Final Destination',          data.final_dest    || '')}
+        ${fld(pfx+'-ctrDest',  'Country of Destination',     data.country_dest  || '')}
+        ${fld(pfx+'-buyerName','Buyer Name (if different)',  data.buyer_name    || '', true)}
+        ${fld(pfx+'-buyerAddr','Buyer Address',              data.buyer_address || '', true)}
+      </div>
+    </div>`;
+  }
+
+  const bodyHtml = `
+    <div style="margin-bottom:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;font-size:.82rem">
+      <strong>Party:</strong> ${esc(req.partyTally)} &nbsp;&nbsp;
+      <strong>Currency:</strong> ${esc(req.currency || '')} &nbsp;&nbsp;
+      <strong>Country:</strong> ${esc(req.partyCountry || '')}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${modeBlock('sp-air','AIR',airData)}
+      ${modeBlock('sp-sea','SEA',seaData)}
+    </div>`;
+
+  showModal('💾 Save Party to JSON', bodyHtml, [
+    { label: '💾 Save Both Modes', cls: 'btn-primary', id: 'spSaveBothBtn' },
+    { label: 'Cancel', cls: 'btn-outline', close: true }
+  ], { wide: true });
+
+  id('spSaveBothBtn')?.addEventListener('click', async () => {
+    const gv = eid => document.getElementById(eid)?.value?.trim() || '';
+    const base = { partyTally: req.partyTally, currency: req.currency, partyCountry: req.partyCountry };
+    const airReq = { ...base, airSea: 'AIR',
+      terms: gv('sp-air-terms'), portLoading: gv('sp-air-portL'), portDischarge: gv('sp-air-portD'),
+      finalDest: gv('sp-air-finalDest'), countryDest: gv('sp-air-ctrDest'),
+      buyerName: gv('sp-air-buyerName'), buyerAddress: gv('sp-air-buyerAddr') };
+    const seaReq = { ...base, airSea: 'SEA',
+      terms: gv('sp-sea-terms'), portLoading: gv('sp-sea-portL'), portDischarge: gv('sp-sea-portD'),
+      finalDest: gv('sp-sea-finalDest'), countryDest: gv('sp-sea-ctrDest'),
+      buyerName: gv('sp-sea-buyerName'), buyerAddress: gv('sp-sea-buyerAddr') };
+    try {
+      await api('/api/tally/save-party', 'POST', airReq);
+      await api('/api/tally/save-party', 'POST', seaReq);
+      closeModal();
+      showToast('Saved AIR + SEA details for ' + req.partyTally, 'success');
+    } catch (e) {
+      showToast('Save failed: ' + (e.message || 'error'), 'error');
+    }
+  });
 }
 
 function updateTallyStats() {
@@ -3965,8 +4040,23 @@ async function createTallyFolders() {
   }
 }
 
-function onTallyModeChange() {
+async function onTallyModeChange() {
   if (State.tallyCurrentTab === 4) buildTallyReview();
+  const party = getVal('tallyPartyName');
+  const mode  = document.querySelector('input[name="tallyMode"]:checked')?.value || 'AIR';
+  if (!party) return;
+  try {
+    const res = await api(`/api/tally/export-details?party=${encodeURIComponent(party)}&mode=${encodeURIComponent(mode)}`, 'GET');
+    const d = res.data || {};
+    // Always update — if no data saved for this mode the fields go blank (correct behaviour)
+    setVal('tallyTerms',       d.terms          ?? '');
+    setVal('tallyPortL',       d.port_loading    ?? '');
+    setVal('tallyPortD',       d.port_discharge  ?? '');
+    setVal('tallyFinalDest',   d.final_dest      ?? '');
+    setVal('tallyCountryDest', d.country_dest    ?? '');
+    setVal('tallyBuyerName',   d.buyer_name      ?? '');
+    setVal('tallyBuyerAddr',   d.buyer_address   ?? '');
+  } catch (_) {}
 }
 
 async function switchTallyMethod() {

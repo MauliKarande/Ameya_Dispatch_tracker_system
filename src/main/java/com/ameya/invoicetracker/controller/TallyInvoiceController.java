@@ -215,6 +215,18 @@ public class TallyInvoiceController {
     }
 
     /**
+     * GET /api/tally/export-details?party=...&mode=...
+     * Returns saved export details (terms, ports, etc.) for a party+mode combination.
+     */
+    @GetMapping("/export-details")
+    public ResponseEntity<ApiResponse<Map<String, String>>> exportDetails(
+            @RequestParam String party,
+            @RequestParam String mode) {
+        Map<String, String> details = customData.getExportDetails(party, mode);
+        return ResponseEntity.ok(ApiResponse.ok(details != null ? details : new HashMap<>()));
+    }
+
+    /**
      * GET /api/tally/ping
      * Checks if the Tally HTTP server is reachable on localhost:9000.
      */
