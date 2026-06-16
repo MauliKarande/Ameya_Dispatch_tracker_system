@@ -88,57 +88,100 @@ public class TallyInvoiceService {
 
     // ── Check part numbers against Tally stock items ─────────────────────
     /**
-     * Queries Tally HTTP server for all stock items, then returns which of the
-     * given part numbers exist in Tally and which do not.
-     * Equivalent to the Python script's ODBC stock-item lookup via pyodbc.
+     * Checks each part number individually using Tally's object-level "Stock Item"
+     * HTTP API query — one request per part. This mirrors the Python V8 ODBC approach
+     * (check_part_availability_odbc) without needing a JDBC-ODBC bridge.
+     * Per-part queries are fast and do NOT hang Tally like a bulk "List of Accounts" dump.
      */
     public Map<String, Object> checkPartsInTally(List<String> partNumbers) {
-        String xml = """
-                <ENVELOPE>
-                  <HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>
-                  <BODY>
-                    <EXPORTDATA>
-                      <REQUESTDESC>
-                        <REPORTNAME>List of Accounts</REPORTNAME>
-                        <STATICVARIABLES>
-                          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
-                          <ACCOUNTTYPE>Stock Items</ACCOUNTTYPE>
-                        </STATICVARIABLES>
-                      </REQUESTDESC>
-                    </EXPORTDATA>
-                  </BODY>
-                </ENVELOPE>""";
-        try {
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10)).build();
-            HttpRequest httpReq = HttpRequest.newBuilder()
-                    .uri(URI.create(tallyUrl))
-                    .header("Content-Type", "application/xml")
-                    .POST(HttpRequest.BodyPublishers.ofString(xml, StandardCharsets.UTF_8))
-                    .timeout(Duration.ofSeconds(20)).build();
-            String body = client.send(httpReq, HttpResponse.BodyHandlers.ofString()).body();
+        List<Map<String, String>> results = new ArrayList<>();
+        List<String> found    = new ArrayList<>();
+        List<String> notFound = new ArrayList<>();
 
-            // Parse stock item names from Tally XML response
-            Set<String> tallyItems = new HashSet<>();
-            Matcher m1 = Pattern.compile("NAME=\"([^\"]+)\"", Pattern.CASE_INSENSITIVE).matcher(body);
-            while (m1.find()) tallyItems.add(m1.group(1).toUpperCase().strip());
-            Matcher m2 = Pattern.compile("<NAME>([^<]+)</NAME>", Pattern.CASE_INSENSITIVE).matcher(body);
-            while (m2.find()) tallyItems.add(m2.group(1).toUpperCase().strip());
-            log.info("Tally stock item check: {} items in database", tallyItems.size());
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10)).build();
 
-            List<String> found = new ArrayList<>(), notFound = new ArrayList<>();
-            for (String part : partNumbers) {
-                (tallyItems.contains(part.toUpperCase().strip()) ? found : notFound).add(part);
+        for (String partNo : partNumbers) {
+            Map<String, String> partResult = new LinkedHashMap<>();
+            partResult.put("partNo", partNo);
+            try {
+                String xml = String.format("""
+                        <ENVELOPE>
+                         <HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>
+                         <BODY><EXPORTDATA>
+                          <REQUESTDESC>
+                           <REPORTNAME>Stock Item</REPORTNAME>
+                           <STATICVARIABLES>
+                            <SVCURRENTCOMPANY>%s</SVCURRENTCOMPANY>
+                            <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+                            <STOCKITEMNAME>%s</STOCKITEMNAME>
+                           </STATICVARIABLES>
+                          </REQUESTDESC>
+                         </EXPORTDATA></BODY>
+                        </ENVELOPE>""", escXml(companyName), escXml(partNo));
+
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(tallyUrl))
+                        .header("Content-Type", "application/xml")
+                        .POST(HttpRequest.BodyPublishers.ofString(xml, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofSeconds(15)).build();
+                String body = client.send(httpReq, HttpResponse.BodyHandlers.ofString()).body();
+
+                boolean exists     = stockItemExistsInResponse(body, partNo);
+                String  closingQty = parseClosingBalance(body);
+
+                partResult.put("available", String.valueOf(exists));
+                partResult.put("qty", closingQty);
+                if (exists) found.add(partNo); else notFound.add(partNo);
+                log.debug("Stock check '{}': exists={} qty={}", partNo, exists, closingQty);
+            } catch (Exception e) {
+                log.warn("Stock check failed for '{}': {}", partNo, e.getMessage());
+                partResult.put("available", "false");
+                partResult.put("qty", "0");
+                partResult.put("error", e.getMessage());
+                notFound.add(partNo);
             }
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("found", found);
-            result.put("notFound", notFound);
-            result.put("totalInTally", tallyItems.size());
-            return result;
-        } catch (Exception e) {
-            log.error("Tally stock check failed: {}", e.getMessage());
-            throw new RuntimeException("Cannot connect to Tally at " + tallyUrl + ": " + e.getMessage());
+            results.add(partResult);
         }
+
+        log.info("Tally stock check: {}/{} parts found", found.size(), partNumbers.size());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("found",        found);
+        result.put("notFound",     notFound);
+        result.put("results",      results);
+        result.put("totalChecked", partNumbers.size());
+        return result;
+    }
+
+    private boolean stockItemExistsInResponse(String response, String itemName) {
+        if (response == null || response.isBlank()) return false;
+        String lower = response.toLowerCase();
+        String item  = itemName.toLowerCase();
+        // Tally returns an essentially empty envelope when item is not found
+        if (!lower.contains(item)) return false;
+        return lower.contains("<name>") || lower.contains("closingbalance")
+                || lower.contains("stockitem") || lower.contains("<closingqty");
+    }
+
+    private String parseClosingBalance(String response) {
+        if (response == null) return "0";
+        Matcher m = Pattern.compile(
+                "<CLOSINGBALANCE[^>]*>\\s*([\\d.,\\-]+)\\s*([A-Z]*)\\s*</CLOSINGBALANCE>",
+                Pattern.CASE_INSENSITIVE).matcher(response);
+        if (m.find()) {
+            String qty = m.group(1).replace(",", "").trim();
+            String unit = m.group(2).trim();
+            return unit.isEmpty() ? qty : qty + " " + unit;
+        }
+        m = Pattern.compile(
+                "<CLOSINGQTY[^>]*>\\s*([\\d.,\\-]+)\\s*([A-Z]*)\\s*</CLOSINGQTY>",
+                Pattern.CASE_INSENSITIVE).matcher(response);
+        if (m.find()) {
+            String qty = m.group(1).replace(",", "").trim();
+            String unit = m.group(2).trim();
+            return unit.isEmpty() ? qty : qty + " " + unit;
+        }
+        return "0";
     }
 
     // ── Create invoice folder + blank PDFs ───────────────────────────────

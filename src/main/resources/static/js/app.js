@@ -3580,7 +3580,7 @@ async function checkTallyParts() {
 
   panel.style.display = 'block';
   panel.innerHTML = `<div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:6px;padding:14px;text-align:center;color:var(--navy,#1e3a6e)">
-    🔄 Checking ${active.length} parts against Tally database…
+    🔄 Checking ${active.length} parts in Tally one by one…
   </div>`;
 
   try {
@@ -3626,19 +3626,24 @@ function renderTallyCheckPanel() {
   if (!panel) return;
   const result   = State.tallyCheckResult || { found: [], notFound: [] };
   const foundSet = new Set((result.found || []).map(s => s.toUpperCase()));
+  const resultsMap = {};
+  (result.results || []).forEach(r => { resultsMap[r.partNo.toUpperCase()] = r; });
   const active   = State.tallyParts.filter(p => !p.deleted);
   const deleted  = State.tallyParts.filter(p =>  p.deleted);
   const foundCnt    = active.filter(p => foundSet.has(p.partNo.toUpperCase())).length;
   const notFoundCnt = active.length - foundCnt;
 
   const activeRows = active.map(p => {
-    const oi     = State.tallyParts.indexOf(p);
-    const exists = foundSet.has(p.partNo.toUpperCase());
+    const oi       = State.tallyParts.indexOf(p);
+    const exists   = foundSet.has(p.partNo.toUpperCase());
+    const pr       = resultsMap[p.partNo.toUpperCase()];
+    const stockQty = pr ? pr.qty : (result.results ? '?' : '');
     return `<tr style="border-bottom:1px solid #e5e7eb;background:${exists ? '#f0fdf4' : '#fef2f2'}">
       <td style="padding:4px 8px;text-align:center"><input type="checkbox" class="tally-check-cb" data-idx="${oi}" ${!exists ? 'checked' : ''}></td>
       <td style="padding:4px 8px;font-weight:500;font-size:.82rem">${esc(p.partNo)}</td>
       <td style="padding:4px 6px;text-align:right;font-size:.8rem">${p.qty}</td>
       <td style="padding:4px 8px;text-align:right;font-size:.8rem">${p.amount.toFixed(2)}</td>
+      <td style="padding:4px 8px;text-align:right;font-size:.8rem;font-weight:600;color:${exists ? '#15803d' : '#94a3b8'}">${stockQty}</td>
       <td style="padding:4px 8px;font-size:.8rem;font-weight:600;color:${exists ? '#15803d' : '#dc2626'}">${exists ? '✓ In Tally' : '✗ Not in Tally'}</td>
       <td style="padding:4px 6px;text-align:center">
         <button style="background:#fee2e2;color:#dc2626;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:.75rem"
@@ -3648,7 +3653,7 @@ function renderTallyCheckPanel() {
   }).join('');
 
   const deletedRows = deleted.length === 0 ? '' :
-    `<tr><td colspan="6" style="padding:4px 8px;background:#ffe4e4;font-size:.73rem;color:#dc2626;font-weight:600">— ${deleted.length} deleted (↩ to restore) —</td></tr>` +
+    `<tr><td colspan="7" style="padding:4px 8px;background:#ffe4e4;font-size:.73rem;color:#dc2626;font-weight:600">— ${deleted.length} deleted (↩ to restore) —</td></tr>` +
     deleted.map(p => {
       const oi = State.tallyParts.indexOf(p);
       return `<tr style="background:#fff5f5;opacity:.72">
@@ -3656,6 +3661,7 @@ function renderTallyCheckPanel() {
         <td style="padding:4px 8px;text-decoration:line-through;color:var(--text3);font-size:.82rem">${esc(p.partNo)}</td>
         <td style="padding:4px 6px;text-align:right;font-size:.8rem">${p.qty}</td>
         <td style="padding:4px 8px;text-align:right;font-size:.8rem">${p.amount.toFixed(2)}</td>
+        <td style="padding:4px 8px;font-size:.8rem;color:#94a3b8">—</td>
         <td style="padding:4px 8px;font-size:.8rem;color:#dc2626">⊘ Deleted</td>
         <td style="padding:4px 6px;text-align:center">
           <button style="background:#e0f2fe;color:#0369a1;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:.75rem"
@@ -3684,8 +3690,9 @@ function renderTallyCheckPanel() {
               <th style="padding:4px 8px;width:28px"><input type="checkbox" title="Select all"
                 onchange="document.querySelectorAll('.tally-check-cb,.tally-restore-cb').forEach(c=>c.checked=this.checked)"></th>
               <th style="padding:4px 10px;text-align:left">Part No.</th>
-              <th style="padding:4px 6px;text-align:right">Qty</th>
+              <th style="padding:4px 6px;text-align:right">Desp Qty</th>
               <th style="padding:4px 8px;text-align:right">Amount</th>
+              <th style="padding:4px 8px;text-align:right">Stock Qty</th>
               <th style="padding:4px 10px;text-align:left">Status</th>
               <th style="padding:4px 6px"></th>
             </tr>
@@ -3693,7 +3700,7 @@ function renderTallyCheckPanel() {
           <tbody>${activeRows}${deletedRows}</tbody>
         </table>
       </div>
-      ${result.totalInTally !== undefined ? `<div style="margin-top:5px;font-size:.72rem;color:var(--text3)">Tally has ${result.totalInTally} total stock items</div>` : ''}
+      ${result.totalChecked !== undefined ? `<div style="margin-top:5px;font-size:.72rem;color:var(--text3)">Checked ${result.totalChecked} parts in Tally</div>` : ''}
     </div>`;
   panel.style.display = 'block';
 }
