@@ -77,6 +77,55 @@ public class TallyCustomDataService {
         PARTY_MAP.put("sulzer pumps mexico", new String[]{"SULZER PUMPS MEXICO, SA de CV","DOLLAR","MEXICO"});
     }
 
+    // ── Hardcoded export details (mirrors Python script's EXPORT_DETAILS) ───
+    private static final Map<String, Map<String, String>> EXPORT_MAP = new LinkedHashMap<>();
+    static {
+        e("FLOWSERVE CORPORATION (FCD) SPRINGVILLE OPERATION","SEA","EX-WORKS PUNE","JNPT - MUMBAI","LOS - ANGELES","UNITED STATES","UNITED STATES","","");
+        e("FLOWSERVE CORPORATION (FCD) SPRINGVILLE OPERATION","AIR","EX-WORKS PUNE","MUMBAI","LOS - ANGELES","UNITED STATES","UNITED STATES","FLOWSERVE US COMPANY.","5215 N. O Connor Blvd., Ste. 700, Irving, TX, 75039, USA");
+        e("TRILLIUM FLOW TECHNOLOGIES FRANCE SAS","SEA","EX-WORKS PUNE","JNPT-MUMBAI","ANTWERP","FRANCE","FRANCE","","");
+        e("TRILLIUM FLOW TECHNOLOGIES FRANCE SAS","AIR","EX-WORKS PUNE","MUMBAI","LILLE (FRILL)","FRANCE","FRANCE","","");
+        e("SULZER PUMPS (CANADA) INC","AIR","EX-WORKS PUNE","MUMBAI","VANCOUVER","CANADA","CANADA","","");
+        e("SULZER PUMPS (CANADA) INC","SEA","EX-WORKS PUNE","JNPT-MUMBAI","VANCOUVER","CANADA","CANADA","","");
+        e("TRILLIUM FLOW TECHNOLOGIES UK","AIR","CIF - MANCHESTER","MUMBAI","MANCHESTER","UNITED KINGDOM","UNITED KINGDOM","","");
+        e("TRILLIUM FLOW TECHNOLOGIES UK","SEA","CIF - LONDON","JNPT - MUMBAI","FELIXSTOWE / LONDON GATEWAY","UNITED KINGDOM","UNITED KINGDOM","","");
+        e("SULZER PUMPS (US) INC","AIR","EX-WORKS PUNE","MUMBAI","NEW YORK","UNITED STATES","UNITED STATES","","");
+        e("SULZER PUMPS (US) INC","SEA","EX-WORKS PUNE","JNPT-MUMBAI","NEW YORK","UNITED STATES","UNITED STATES","","");
+        e("ADAMS ARMATUREN GMBH","AIR","EX-WORKS PUNE","MUMBAI","FRANKFURT","GERMANY","GERMANY","","");
+        e("ADAMS ARMATUREN GMBH","SEA","CIF HAMBURG","JNPT MUMBAI","HAMBURG","GERMANY","GERMANY","","");
+        e("SULZER LEEDS PMC - UK","AIR","EX-WORKS PUNE","MUMBAI","MANCHESTER","UNITED KINGDOM","UNITED KINGDOM","","");
+        e("SULZER LEEDS PMC - UK","SEA","EX-WORKS PUNE","JNPT-MUMBAI","MANCHESTER","UNITED KINGDOM","UNITED KINGDOM","","");
+        e("SULZER PUMPEN (DEUTSCHLAND) GMBH","AIR","EX-WORKS PUNE","MUMBAI","FRANKFURT","GERMANY","GERMANY","","");
+        e("SULZER PUMPEN (DEUTSCHLAND) GMBH","SEA","EX-WORKS PUNE","JNPT-MUMBAI","FRANKFURT","GERMANY","GERMANY","","");
+        e("SULZER PUMPS MEXICO, SA DE CV","AIR","EX-WORKS PUNE","MUMBAI","MEXICO CITY","MEXICO","MEXICO","","");
+        e("SULZER PUMPS MEXICO, SA DE CV","SEA","EX-WORKS PUNE","JNPT-MUMBAI","MEXICO CITY","MEXICO","MEXICO","","");
+        e("KOSO KENT INTROL LIMITED","AIR","EX-WORKS PUNE","MUMBAI","MANCHESTER","UNITED KINGDOM","UNITED KINGDOM","","");
+        e("KOSO KENT INTROL LIMITED","SEA","EX-WORKS PUNE","JNPT-MUMBAI","FELIXSTOWE","UNITED KINGDOM","UNITED KINGDOM","","");
+        e("BAF VALVES","AIR","EX-WORKS PUNE","MUMBAI","NAD AL SHEBA","UAE","UNITED ARAB EMIRATES","","");
+        e("BAF VALVES","SEA","EX-WORKS PUNE","JNPT - MUMBAI","JEBEL ALI","UAE","UNITED ARAB EMIRATES","","");
+        e("FLOWSERVE PTE LTD. - SINGAPORE","AIR","EX-WORKS PUNE","MUMBAI","SINGAPORE","SINGAPORE","SINGAPORE","FLOWSERVE US COMPANY.","");
+        e("FLOWSERVE PTE LTD. - SINGAPORE","SEA","EX-WORKS PUNE","JNPT-MUMBAI","SINGAPORE","SINGAPORE","SINGAPORE","FLOWSERVE US COMPANY.","");
+        e("FLOWSERVE FLOW CONTROL DIVISION, RALEIGH","AIR","EX-WORKS PUNE","MUMBAI","RALEIGH","UNITED STATES","UNITED STATES","FLOWSERVE US COMPANY.","");
+        e("FLOWSERVE FLOW CONTROL DIVISION, RALEIGH","SEA","EX-WORKS PUNE","JNPT-MUMBAI","RALEIGH","UNITED STATES","UNITED STATES","FLOWSERVE US COMPANY.","");
+        e("FLOWSERVE DO BRASIL LTDA (TAX ID 33.273.681/0001-10)","AIR","EX-WORKS PUNE","MUMBAI","RIO DE JANEIRO","BRAZIL","BRAZIL","","");
+        e("FLOWSERVE DO BRASIL LTDA (TAX ID 33.273.681/0001-10)","SEA","EX-WORKS PUNE","JNPT-MUMBAI","RIO DE JANEIRO","BRAZIL","BRAZIL","","");
+        e("FLOWSERVE DO BRASIL LTD","AIR","EX-WORKS PUNE","MUMBAI","SAO PAULO","BRAZIL","BRAZIL","","");
+        e("FLOWSERVE DO BRASIL LTD","SEA","EX-WORKS PUNE","JNPT-MUMBAI","SAO PAULO","BRAZIL","BRAZIL","","");
+        e("SULZER PUMPS (UK) LTD.","AIR","EX-WORKS PUNE","MUMBAI","MANCHESTER","UNITED KINGDOM","UNITED KINGDOM","","");
+        e("SULZER PUMPS (UK) LTD.","SEA","EX-WORKS PUNE","JNPT-MUMBAI","MANCHESTER","UNITED KINGDOM","UNITED KINGDOM","","");
+        e("TRILLIUM VALVES USA","SEA","CIF - NEW YORK","JNPT - MUMBAI","NEW YORK","UNITED STATES","UNITED STATES","","");
+        e("TRILLIUM VALVES USA","AIR","EX-WORKS PUNE","MUMBAI","NEW YORK","UNITED STATES","UNITED STATES","","");
+        e("ARMATURE D.O.O (SLOVENIJA)","AIR","EX-WORKS PUNE","MUMBAI","LJUBLJANA","SLOVENIA","SLOVENIA","","");
+        e("ARMATURE D.O.O (SLOVENIJA)","SEA","EX-WORKS PUNE","JNPT-MUMBAI","LJUBLJANA","SLOVENIA","SLOVENIA","","");
+    }
+    private static void e(String p, String md, String terms, String pl, String pd,
+                          String fin, String ctr, String bn, String ba) {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("terms", terms); m.put("port_loading", pl); m.put("port_discharge", pd);
+        m.put("final_dest", fin); m.put("country_dest", ctr);
+        m.put("buyer_name", bn); m.put("buyer_address", ba);
+        EXPORT_MAP.put(p.toUpperCase() + "|" + md.toUpperCase(), m);
+    }
+
     @PostConstruct
     public void load() {
         try {
@@ -131,26 +180,44 @@ public class TallyCustomDataService {
         return null;
     }
 
-    /** Returns export details map or null. */
+    /** Returns export details map or null. JSON takes priority over hardcoded defaults. */
     public Map<String, String> getExportDetails(String tallyName, String mode) {
         if (tallyName == null || mode == null) return null;
         String keyUpper = tallyName.toUpperCase() + "|" + mode.toUpperCase();
+
+        // 1. JSON exact match (user-saved → highest priority)
         JsonNode expNode = root.path("export_details").path(keyUpper);
         if (!expNode.isMissingNode()) return jsonToMap(expNode);
-        // Fuzzy match
+
+        // 2. JSON fuzzy match
         JsonNode expRoot = root.path("export_details");
         if (!expRoot.isMissingNode()) {
             Iterator<Map.Entry<String, JsonNode>> it = expRoot.fields();
             while (it.hasNext()) {
                 Map.Entry<String, JsonNode> entry = it.next();
-                String[] parts = entry.getKey().split("\\|");
-                if (parts.length == 2 && parts[1].equalsIgnoreCase(mode)
-                        && (normalise(parts[0]).contains(normalise(tallyName))
-                            || normalise(tallyName).contains(normalise(parts[0])))) {
+                String[] kp = entry.getKey().split("\\|");
+                if (kp.length == 2 && kp[1].equalsIgnoreCase(mode)
+                        && (normalise(kp[0]).contains(normalise(tallyName))
+                            || normalise(tallyName).contains(normalise(kp[0])))) {
                     return jsonToMap(entry.getValue());
                 }
             }
         }
+
+        // 3. Hardcoded EXPORT_MAP exact match
+        Map<String, String> hard = EXPORT_MAP.get(keyUpper);
+        if (hard != null) return new LinkedHashMap<>(hard);
+
+        // 4. Hardcoded EXPORT_MAP fuzzy match
+        for (Map.Entry<String, Map<String, String>> entry : EXPORT_MAP.entrySet()) {
+            String[] kp = entry.getKey().split("\\|");
+            if (kp.length == 2 && kp[1].equalsIgnoreCase(mode)
+                    && (normalise(kp[0]).contains(normalise(tallyName))
+                        || normalise(tallyName).contains(normalise(kp[0])))) {
+                return new LinkedHashMap<>(entry.getValue());
+            }
+        }
+
         return null;
     }
 
