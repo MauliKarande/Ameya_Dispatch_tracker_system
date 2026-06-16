@@ -2749,7 +2749,14 @@ function closeExcelViewer() {
 function _getCellText(ws, r, c) {
   const cell = ws[XLSX.utils.encode_cell({ r, c })];
   if (!cell) return '';
-  if (cell.w !== undefined) return cell.w.trim();
+  if (cell.w !== undefined) {
+    // If Excel formatted a numeric cell as scientific notation (e.g. 2.04E+11),
+    // return the full integer string so part numbers match Tally exactly.
+    if (cell.t === 'n' && /^-?\d+\.?\d*[eE][+\-]?\d+$/.test(cell.w.trim())) {
+      return String(Math.round(cell.v));
+    }
+    return cell.w.trim();
+  }
   if (cell.t === 'n' && cell.z) {
     try { return XLSX.SSF.format(cell.z, cell.v).trim(); } catch (_) { return String(cell.v).trim(); }
   }
@@ -2761,6 +2768,47 @@ function _getCellText(ws, r, c) {
 // handles hyphen (-), en-dash (–), em-dash (—), Unicode minus (−), and empty/whitespace.
 function _isDash(val) {
   return !val || /^[\-–—−\s]+$/.test(val);
+}
+
+// Download an Excel file and parse it for Tally parts using the same logic as
+// Invoice View (visible columns only, DESP. AMT. non-empty rows only).
+// Returns array of {row, partNo, qty, amount, poNo, poSrNo, ratePc, deleted}.
+async function _parseExcelForTallyParts(fileId) {
+  const res = await fetch(`/api/files/download/${fileId}?token=${State.token}`);
+  if (!res.ok) throw new Error('Cannot download Excel (id=' + fileId + ')');
+  const wb = XLSX.read(await res.arrayBuffer(), { type: 'array', cellStyles: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws || !ws['!ref']) return [];
+  const range    = XLSX.utils.decode_range(ws['!ref']);
+  const colProps = ws['!cols'] || [];
+  const visCols  = [];
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    if (!colProps[c]?.hidden) visCols.push(c);
+  }
+  const found = _findInvoiceColumns(ws, range, visCols);
+  if (!found) throw new Error('Cannot detect invoice columns (P.O.NO., PART NO., DESP. AMT. etc.) in Excel file');
+  const { dataStartRow, colMap } = found;
+  const rowHidden = ws['!rows'] || [];
+  const allKeys   = Object.keys(colMap);
+  const parts     = [];
+  for (let r = dataStartRow; r <= range.e.r; r++) {
+    if (rowHidden[r]?.hidden) continue;
+    const amtStr = colMap.despAmt !== undefined ? _getCellText(ws, r, colMap.despAmt) : '';
+    if (_isDash(amtStr) || amtStr === '0' || amtStr === '') continue;
+    // Skip total/subtotal rows (only 1 or fewer detected columns have values)
+    if (allKeys.filter(k => _getCellText(ws, r, colMap[k])).length < 2) continue;
+    const partNo  = colMap.part    !== undefined ? _getCellText(ws, r, colMap.part)    : '';
+    const despQty = colMap.despQty !== undefined ? _getCellText(ws, r, colMap.despQty) : '';
+    const poNo    = colMap.po      !== undefined ? _getCellText(ws, r, colMap.po)      : '';
+    const srNo    = colMap.sr      !== undefined ? _getCellText(ws, r, colMap.sr)      : '';
+    const rate    = colMap.rate    !== undefined ? _getCellText(ws, r, colMap.rate)    : '';
+    const qty     = parseInt(String(despQty).replace(/,/g, ''), 10) || 0;
+    const amount  = parseFloat(String(amtStr).replace(/,/g, ''))    || 0;
+    const ratePc  = parseFloat(String(rate).replace(/,/g, ''))      || 0;
+    if (!partNo && amount === 0) continue;
+    parts.push({ row: r + 1, partNo, qty, amount, poNo, poSrNo: srNo, ratePc, deleted: false });
+  }
+  return parts;
 }
 
 // Scan only visible (non-hidden) columns to find the 8 invoice column positions.
@@ -3388,8 +3436,13 @@ async function openTallyModal(wo) {
     const res = await api(`/api/tally/prefill/${wo.id}?method=${State.tallyImportMethod}`, 'GET');
     const d = res.data;
 
-    // Store parts
-    State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
+    // Parse parts from Excel client-side (same as Invoice View) if file ID available.
+    // Falls back to backend-parsed parts when no file is present.
+    if (d.excelFileId) {
+      State.tallyParts = await _parseExcelForTallyParts(d.excelFileId);
+    } else {
+      State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
+    }
 
     // Populate Step 2 fields
     setVal('tallyVoucherNo', d.nextVoucherNo || '');
@@ -3433,9 +3486,9 @@ async function openTallyModal(wo) {
       if (preview) preview.textContent = (d.mailingName ? d.mailingName + '\n' : '') + d.addressLines.join('\n');
     }
 
-    // Show parse error if any
-    if (d.parseError) {
-      if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '⚠ ' + d.parseError; }
+    // Status line
+    if (State.tallyParts.length === 0 && !d.excelFileId) {
+      if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '⚠ ' + (d.parseError || 'No Excel file uploaded'); }
     } else {
       if (statusEl) { statusEl.style.color = ''; statusEl.textContent = `${State.tallyParts.length} part(s) loaded`; }
     }
@@ -3917,26 +3970,23 @@ function onTallyModeChange() {
 }
 
 async function switchTallyMethod() {
-  State.tallyImportMethod = State.tallyImportMethod === 'v374' ? 'v35' : 'v374';
-  updateTallyMethodLabel();
-
   const statusEl = id('tallyPartsStatus');
   const tbody = id('tallyPartsTbody');
-  if (statusEl) statusEl.textContent = `Re-loading with ${State.tallyImportMethod.toUpperCase()}…`;
+  if (statusEl) statusEl.textContent = 'Re-loading from Invoice View…';
   if (tbody) tbody.innerHTML = '';
   State.tallyParts = [];
   updateTallyStats();
 
   try {
-    const res = await api(`/api/tally/prefill/${State.tallyWoId}?method=${State.tallyImportMethod}`, 'GET');
+    const res = await api(`/api/tally/prefill/${State.tallyWoId}?method=v374`, 'GET');
     const d = res.data;
-    State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
-    renderTallyParts();
-    if (d.parseError) {
-      if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '⚠ ' + d.parseError; }
+    if (d.excelFileId) {
+      State.tallyParts = await _parseExcelForTallyParts(d.excelFileId);
     } else {
-      if (statusEl) { statusEl.style.color = ''; statusEl.textContent = `${State.tallyParts.length} part(s) loaded (${State.tallyImportMethod.toUpperCase()})`; }
+      State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
     }
+    renderTallyParts();
+    if (statusEl) { statusEl.style.color = ''; statusEl.textContent = `${State.tallyParts.length} part(s) loaded`; }
   } catch (e) {
     showToast('Re-parse failed: ' + e.message, 'error');
     if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '✗ ' + e.message; }
@@ -3946,16 +3996,8 @@ async function switchTallyMethod() {
 function updateTallyMethodLabel() {
   const lbl = id('tallyMethodLabel');
   const btn = id('tallyMethodBtn');
-  if (!lbl || !btn) return;
-  if (State.tallyImportMethod === 'v374') {
-    lbl.textContent = 'Import: V3.7.4 (default)';
-    btn.textContent = '⚠ Wrong parts? Switch to V3.5';
-    btn.style.background = '#e65100';
-  } else {
-    lbl.textContent = 'Import: V3.5 (strict part filter)';
-    btn.textContent = '↩ Switch back to V3.7.4';
-    btn.style.background = '#1e3a6e';
-  }
+  if (lbl) lbl.textContent = 'Parts: from Invoice View data';
+  if (btn) btn.style.display = 'none';
 }
 
 function parsePackingText(text) {

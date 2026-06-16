@@ -102,6 +102,7 @@ public class TallyInvoiceController {
                 .findTopActiveByWorkOrderIdAndFileType(workOrderId, FileStorage.FileType.EXCEL);
         if (xlsOpt.isPresent()) {
             FileStorage fs = xlsOpt.get();
+            dto.setExcelFileId(fs.getId());
             log.info("Parsing Excel: {}", fs.getFilePath());
             List<TallyPartDTO> parts = excelParser.parseParts(fs.getFilePath(), customerName, method);
             dto.setParts(parts);

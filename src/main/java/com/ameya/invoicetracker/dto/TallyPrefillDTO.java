@@ -28,6 +28,8 @@ public class TallyPrefillDTO {
     // Parsed parts
     private List<TallyPartDTO> parts;
     private String parseError;
+    // Excel file id so the frontend can parse client-side (matches Invoice View)
+    private Long excelFileId;
     // Folder
     private String mainInvoiceFolder;
 }
