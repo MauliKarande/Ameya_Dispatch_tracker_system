@@ -3594,6 +3594,33 @@ async function checkTallyParts() {
   }
 }
 
+// ── Ping Tally Server ─────────────────────────────────────────────────────
+async function pingTallyServer() {
+  const btn = id('tallyPingBtn');
+  const statusEl = id('tallyPingStatus');
+  if (!btn || !statusEl) return;
+  btn.disabled = true;
+  btn.textContent = '🔌 Checking…';
+  statusEl.textContent = '';
+  try {
+    const res = await api('/api/tally/ping', 'GET');
+    const d = res.data;
+    if (d.status === 'UP') {
+      statusEl.textContent = '✓ Tally is running';
+      statusEl.style.color = '#15803d';
+    } else {
+      statusEl.textContent = '✗ Tally not reachable — open Tally and enable HTTP Server (port 9000)';
+      statusEl.style.color = '#dc2626';
+    }
+  } catch (e) {
+    statusEl.textContent = '✗ Cannot reach Tally — make sure it is open with HTTP Server on port 9000';
+    statusEl.style.color = '#dc2626';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔌 Check Tally Server';
+  }
+}
+
 function renderTallyCheckPanel() {
   const panel = id('tallyCheckPanel');
   if (!panel) return;

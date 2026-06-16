@@ -67,6 +67,25 @@ public class TallyInvoiceService {
         }
     }
 
+    // ── Ping Tally server ─────────────────────────────────────────────────
+    public Map<String, String> pingTally() {
+        Map<String, String> result = new LinkedHashMap<>();
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(5)).build();
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(tallyUrl))
+                    .GET()
+                    .timeout(Duration.ofSeconds(5)).build();
+            client.send(req, HttpResponse.BodyHandlers.ofString());
+            result.put("status", "UP");
+        } catch (Exception e) {
+            result.put("status", "DOWN");
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
+
     // ── Check part numbers against Tally stock items ─────────────────────
     /**
      * Queries Tally HTTP server for all stock items, then returns which of the
@@ -241,6 +260,9 @@ public class TallyInvoiceService {
                         <UDF:AMEYAITEMPOSOSRNOSTO.LIST DESC="`AmeyaItemPOSrNoSto`" ISLIST="YES" TYPE="String" INDEX="8261">
                          <UDF:AMEYAITEMPOSOSRNOSTO DESC="`AmeyaItemPOSrNoSto`">%s</UDF:AMEYAITEMPOSOSRNOSTO>
                         </UDF:AMEYAITEMPOSOSRNOSTO.LIST>
+                        <UDF:EIAMSALESDETWEEKNOSTO.LIST DESC="`EIAMSalesDetWeekNoSto`" ISLIST="YES" TYPE="String" INDEX="7666">
+                         <UDF:EIAMSALESDETWEEKNOSTO DESC="`EIAMSalesDetWeekNoSto`">%s</UDF:EIAMSALESDETWEEKNOSTO>
+                        </UDF:EIAMSALESDETWEEKNOSTO.LIST>
                         <UDF:AMEYAITEMRATEPCSTO.LIST DESC="`AmeyaItemRatePcSto`" ISLIST="YES" TYPE="Number" INDEX="8262">
                          <UDF:AMEYAITEMRATEPCSTO DESC="`AmeyaItemRatePcSto`">%.2f</UDF:AMEYAITEMRATEPCSTO>
                         </UDF:AMEYAITEMRATEPCSTO.LIST>
@@ -253,7 +275,7 @@ public class TallyInvoiceService {
                     salesLedger,
                     curr, f, ex, curr, inr,
                     hsnSel, hsnDesc, drawback, hsnCode,
-                    poNo, poSrNo, ratePc));
+                    poNo, poSrNo, poSrNo, ratePc));
         }
 
         String partyCountry = nvl(req.getPartyCountry());

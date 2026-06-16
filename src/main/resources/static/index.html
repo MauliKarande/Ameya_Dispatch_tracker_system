@@ -478,6 +478,11 @@
             style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:5px;padding:3px 11px;font-size:.78rem;font-weight:600;cursor:pointer">
             📊 Check Parts
           </button>
+          <button onclick="pingTallyServer()" id="tallyPingBtn"
+            style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;border-radius:5px;padding:3px 11px;font-size:.78rem;font-weight:600;cursor:pointer">
+            🔌 Check Tally Server
+          </button>
+          <span id="tallyPingStatus" style="font-size:.78rem;font-weight:600"></span>
         </div>
         <!-- Check parts summary panel (hidden by default) -->
         <div id="tallyCheckPanel" style="display:none;margin-bottom:10px"></div>

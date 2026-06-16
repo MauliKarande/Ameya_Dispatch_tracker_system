@@ -214,6 +214,16 @@ public class TallyInvoiceController {
     }
 
     /**
+     * GET /api/tally/ping
+     * Checks if the Tally HTTP server is reachable on localhost:9000.
+     */
+    @GetMapping("/ping")
+    public ResponseEntity<ApiResponse<Map<String, String>>> ping() {
+        Map<String, String> result = tallyService.pingTally();
+        return ResponseEntity.ok(ApiResponse.ok(result));
+    }
+
+    /**
      * POST /api/tally/reload-custom-data
      * Reloads ameya_custom_data.json from disk.
      */
