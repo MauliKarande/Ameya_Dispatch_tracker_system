@@ -67,59 +67,121 @@ public class TallyInvoiceService {
         }
     }
 
-    // ── Check part numbers against Tally stock items ─────────────────────
-    /**
-     * Queries Tally HTTP server for all stock items, then returns which of the
-     * given part numbers exist in Tally and which do not.
-     * Equivalent to the Python script's ODBC stock-item lookup via pyodbc.
-     */
-    public Map<String, Object> checkPartsInTally(List<String> partNumbers) {
-        String xml = """
-                <ENVELOPE>
-                  <HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>
-                  <BODY>
-                    <EXPORTDATA>
-                      <REQUESTDESC>
-                        <REPORTNAME>List of Accounts</REPORTNAME>
-                        <STATICVARIABLES>
-                          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
-                          <ACCOUNTTYPE>Stock Items</ACCOUNTTYPE>
-                        </STATICVARIABLES>
-                      </REQUESTDESC>
-                    </EXPORTDATA>
-                  </BODY>
-                </ENVELOPE>""";
+    // ── Ping Tally server ─────────────────────────────────────────────────
+    public Map<String, String> pingTally() {
+        Map<String, String> result = new LinkedHashMap<>();
         try {
             HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10)).build();
-            HttpRequest httpReq = HttpRequest.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(5)).build();
+            HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(tallyUrl))
-                    .header("Content-Type", "application/xml")
-                    .POST(HttpRequest.BodyPublishers.ofString(xml, StandardCharsets.UTF_8))
-                    .timeout(Duration.ofSeconds(20)).build();
-            String body = client.send(httpReq, HttpResponse.BodyHandlers.ofString()).body();
-
-            // Parse stock item names from Tally XML response
-            Set<String> tallyItems = new HashSet<>();
-            Matcher m1 = Pattern.compile("NAME=\"([^\"]+)\"", Pattern.CASE_INSENSITIVE).matcher(body);
-            while (m1.find()) tallyItems.add(m1.group(1).toUpperCase().strip());
-            Matcher m2 = Pattern.compile("<NAME>([^<]+)</NAME>", Pattern.CASE_INSENSITIVE).matcher(body);
-            while (m2.find()) tallyItems.add(m2.group(1).toUpperCase().strip());
-            log.info("Tally stock item check: {} items in database", tallyItems.size());
-
-            List<String> found = new ArrayList<>(), notFound = new ArrayList<>();
-            for (String part : partNumbers) {
-                (tallyItems.contains(part.toUpperCase().strip()) ? found : notFound).add(part);
-            }
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("found", found);
-            result.put("notFound", notFound);
-            result.put("totalInTally", tallyItems.size());
-            return result;
+                    .GET()
+                    .timeout(Duration.ofSeconds(5)).build();
+            client.send(req, HttpResponse.BodyHandlers.ofString());
+            result.put("status", "UP");
         } catch (Exception e) {
-            log.error("Tally stock check failed: {}", e.getMessage());
-            throw new RuntimeException("Cannot connect to Tally at " + tallyUrl + ": " + e.getMessage());
+            result.put("status", "DOWN");
+            result.put("error", e.getMessage());
         }
+        return result;
+    }
+
+    // ── Check part numbers against Tally stock items ─────────────────────
+    /**
+     * Checks each part number individually using Tally's object-level "Stock Item"
+     * HTTP API query — one request per part. This mirrors the Python V8 ODBC approach
+     * (check_part_availability_odbc) without needing a JDBC-ODBC bridge.
+     * Per-part queries are fast and do NOT hang Tally like a bulk "List of Accounts" dump.
+     */
+    public Map<String, Object> checkPartsInTally(List<String> partNumbers) {
+        List<Map<String, String>> results = new ArrayList<>();
+        List<String> found    = new ArrayList<>();
+        List<String> notFound = new ArrayList<>();
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10)).build();
+
+        for (String partNo : partNumbers) {
+            Map<String, String> partResult = new LinkedHashMap<>();
+            partResult.put("partNo", partNo);
+            try {
+                String xml = String.format("""
+                        <ENVELOPE>
+                         <HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>
+                         <BODY><EXPORTDATA>
+                          <REQUESTDESC>
+                           <REPORTNAME>Stock Item</REPORTNAME>
+                           <STATICVARIABLES>
+                            <SVCURRENTCOMPANY>%s</SVCURRENTCOMPANY>
+                            <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+                            <STOCKITEMNAME>%s</STOCKITEMNAME>
+                           </STATICVARIABLES>
+                          </REQUESTDESC>
+                         </EXPORTDATA></BODY>
+                        </ENVELOPE>""", escXml(companyName), escXml(partNo));
+
+                HttpRequest httpReq = HttpRequest.newBuilder()
+                        .uri(URI.create(tallyUrl))
+                        .header("Content-Type", "application/xml")
+                        .POST(HttpRequest.BodyPublishers.ofString(xml, StandardCharsets.UTF_8))
+                        .timeout(Duration.ofSeconds(15)).build();
+                String body = client.send(httpReq, HttpResponse.BodyHandlers.ofString()).body();
+
+                boolean exists     = stockItemExistsInResponse(body, partNo);
+                String  closingQty = parseClosingBalance(body);
+
+                partResult.put("available", String.valueOf(exists));
+                partResult.put("qty", closingQty);
+                if (exists) found.add(partNo); else notFound.add(partNo);
+                log.debug("Stock check '{}': exists={} qty={}", partNo, exists, closingQty);
+            } catch (Exception e) {
+                log.warn("Stock check failed for '{}': {}", partNo, e.getMessage());
+                partResult.put("available", "false");
+                partResult.put("qty", "0");
+                partResult.put("error", e.getMessage());
+                notFound.add(partNo);
+            }
+            results.add(partResult);
+        }
+
+        log.info("Tally stock check: {}/{} parts found", found.size(), partNumbers.size());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("found",        found);
+        result.put("notFound",     notFound);
+        result.put("results",      results);
+        result.put("totalChecked", partNumbers.size());
+        return result;
+    }
+
+    private boolean stockItemExistsInResponse(String response, String itemName) {
+        if (response == null || response.isBlank()) return false;
+        String lower = response.toLowerCase();
+        String item  = itemName.toLowerCase();
+        // Tally returns an essentially empty envelope when item is not found
+        if (!lower.contains(item)) return false;
+        return lower.contains("<name>") || lower.contains("closingbalance")
+                || lower.contains("stockitem") || lower.contains("<closingqty");
+    }
+
+    private String parseClosingBalance(String response) {
+        if (response == null) return "0";
+        Matcher m = Pattern.compile(
+                "<CLOSINGBALANCE[^>]*>\\s*([\\d.,\\-]+)\\s*([A-Z]*)\\s*</CLOSINGBALANCE>",
+                Pattern.CASE_INSENSITIVE).matcher(response);
+        if (m.find()) {
+            String qty = m.group(1).replace(",", "").trim();
+            String unit = m.group(2).trim();
+            return unit.isEmpty() ? qty : qty + " " + unit;
+        }
+        m = Pattern.compile(
+                "<CLOSINGQTY[^>]*>\\s*([\\d.,\\-]+)\\s*([A-Z]*)\\s*</CLOSINGQTY>",
+                Pattern.CASE_INSENSITIVE).matcher(response);
+        if (m.find()) {
+            String qty = m.group(1).replace(",", "").trim();
+            String unit = m.group(2).trim();
+            return unit.isEmpty() ? qty : qty + " " + unit;
+        }
+        return "0";
     }
 
     // ── Create invoice folder + blank PDFs ───────────────────────────────
@@ -186,7 +248,14 @@ public class TallyInvoiceService {
 
         // Inventory entries
         StringBuilder invXml = new StringBuilder();
+        int partIdx = 0;
         for (TallyPartDTO p : parts) {
+            boolean isFirstPart = partIdx++ == 0;
+            // Non-Sulzer: only first part carries HSN; subsequent parts get empty HSN fields
+            String pHsnCode  = (isSulzer || isFirstPart) ? hsnCode  : "";
+            String pHsnDesc  = (isSulzer || isFirstPart) ? hsnDesc  : "";
+            String pDrawback = (isSulzer || isFirstPart) ? drawback : "";
+            String pHsnSel   = (isSulzer || isFirstPart) ? hsnSel  : "";
             double f   = p.getAmount();
             double inr = round2(f * ex);
             int qty    = Math.max(1, p.getQty());
@@ -241,19 +310,22 @@ public class TallyInvoiceService {
                         <UDF:AMEYAITEMPOSOSRNOSTO.LIST DESC="`AmeyaItemPOSrNoSto`" ISLIST="YES" TYPE="String" INDEX="8261">
                          <UDF:AMEYAITEMPOSOSRNOSTO DESC="`AmeyaItemPOSrNoSto`">%s</UDF:AMEYAITEMPOSOSRNOSTO>
                         </UDF:AMEYAITEMPOSOSRNOSTO.LIST>
+                        <UDF:EIAMSALESDETWEEKNOSTO.LIST DESC="`EIAMSalesDetWeekNoSto`" ISLIST="YES" TYPE="String" INDEX="7666">
+                         <UDF:EIAMSALESDETWEEKNOSTO DESC="`EIAMSalesDetWeekNoSto`">%s</UDF:EIAMSALESDETWEEKNOSTO>
+                        </UDF:EIAMSALESDETWEEKNOSTO.LIST>
                         <UDF:AMEYAITEMRATEPCSTO.LIST DESC="`AmeyaItemRatePcSto`" ISLIST="YES" TYPE="Number" INDEX="8262">
                          <UDF:AMEYAITEMRATEPCSTO DESC="`AmeyaItemRatePcSto`">%.2f</UDF:AMEYAITEMRATEPCSTO>
                         </UDF:AMEYAITEMRATEPCSTO.LIST>
                        </ALLINVENTORYENTRIES.LIST>
                     """,
-                    escXml(p.getPartNo()), salesLedger, hsnCode, hsnDesc,
+                    escXml(p.getPartNo()), salesLedger, pHsnCode, pHsnDesc,
                     curr, ratePc, ratePcInr,
                     curr, f, ex, curr, inr, qty, qty,
                     curr, f, ex, curr, inr, qty, qty,
                     salesLedger,
                     curr, f, ex, curr, inr,
-                    hsnSel, hsnDesc, drawback, hsnCode,
-                    poNo, poSrNo, ratePc));
+                    pHsnSel, pHsnDesc, pDrawback, pHsnCode,
+                    poNo, poSrNo, poSrNo, ratePc));
         }
 
         String partyCountry = nvl(req.getPartyCountry());
@@ -321,6 +393,9 @@ public class TallyInvoiceService {
                     <UDF:PROFINVBUYADDSTO.LIST DESC="`PROFINVBUYAddSTO`" ISLIST="YES" TYPE="String" INDEX="8005">
                      <UDF:PROFINVBUYADDSTO DESC="`PROFINVBUYAddSTO`">%s</UDF:PROFINVBUYADDSTO>
                     </UDF:PROFINVBUYADDSTO.LIST>
+                    <UDF:PROPOSTSHIPPRECARRRIAGE.LIST DESC="`PROpostShipPrecarrriage`" ISLIST="YES" TYPE="String" INDEX="8011">
+                     <UDF:PROPOSTSHIPPRECARRRIAGE DESC="`PROpostShipPrecarrriage`">BY ROAD</UDF:PROPOSTSHIPPRECARRRIAGE>
+                    </UDF:PROPOSTSHIPPRECARRRIAGE.LIST>
                     <UDF:PROPOSTSHIPVESSELNAME.LIST DESC="`PROpostShipVesselName`" ISLIST="YES" TYPE="String" INDEX="8013">
                      <UDF:PROPOSTSHIPVESSELNAME DESC="`PROpostShipVesselName`">%s</UDF:PROPOSTSHIPVESSELNAME>
                     </UDF:PROPOSTSHIPVESSELNAME.LIST>
