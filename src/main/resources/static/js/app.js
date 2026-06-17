@@ -224,9 +224,9 @@ function showApp() {
   setupNotifications();
   startAutoSync();
   setupNotificationBanner();
-  // Cart badge for STORE and GM
+  // Cart badge for STORE, GM and Sales Exec
   const _role = State.user?.role;
-  if (_role === 'STORE' || _role === 'GENERAL_MANAGER') refreshCartBadge();
+  if (_role === 'STORE' || _role === 'GENERAL_MANAGER' || _role === 'SALES_EXECUTIVE') refreshCartBadge();
 
   const savedPage = localStorage.getItem('lastPage');
   const savedWoId = localStorage.getItem('lastWoId');
@@ -305,8 +305,8 @@ function setupUserUI() {
   document.querySelectorAll('.nav-only-invoice-creator').forEach(el => el.style.display = isInvoiceCreator ? '' : 'none');
   document.querySelectorAll('.nav-only-sales-exec').forEach(el => el.style.display = isSalesExec ? '' : 'none');
   document.querySelectorAll('.nav-hide-sales-exec').forEach(el => el.style.display = isSalesExec ? 'none' : '');
-  // Store Cart visible to Store + General Manager
-  document.querySelectorAll('.nav-store-cart').forEach(el => el.style.display = (isStore || isGM) ? '' : 'none');
+  // Store Cart visible to Store + General Manager + Sales Executive
+  document.querySelectorAll('.nav-store-cart').forEach(el => el.style.display = (isStore || isGM || isSalesExec) ? '' : 'none');
 
   // ADMIN cannot touch dispatches — redirect to user-mgmt as home
   if (isAdmin) {
@@ -895,10 +895,17 @@ function renderRFDPendingPage() {
   const { items, safePage, totalPages, total } = paginateList(list, State.rfdPendingPage);
   State.rfdPendingPage = safePage;
 
-  id('rfdList').innerHTML = items.map(wo => `
-    <div class="rfd-card" id="rfd-card-${wo.id}">
+  id('rfdList').innerHTML = items.map(wo => {
+    const hasSupply = wo.supplyStatus && wo.supplyStatus !== 'NONE';
+    const supplyBadge = hasSupply
+      ? `<span class="supply-badge supply-badge-${wo.supplyStatus.toLowerCase()}" style="margin-left:6px">${wo.supplyStatus === 'SHORT' ? '⚠ Short' : wo.supplyStatus === 'EXCEED' ? '↑ Exceed' : '⚠↑ Both'}</span>` : '';
+    const remarkLine = hasSupply && wo.dlRemark
+      ? `<div style="font-size:.75rem;color:var(--text2);margin-top:3px;font-style:italic">💬 ${esc(wo.dlRemark)}</div>` : '';
+    return `
+    <div class="rfd-card${hasSupply ? ' supply-card-orange' : ''}" id="rfd-card-${wo.id}">
       <div class="rfd-card-info">
-        <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a></div>
+        <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a>${supplyBadge}</div>
+        ${remarkLine}
         <div class="rfd-customer">${esc(wo.customerName)}</div>
         <div class="rfd-meta">
           ${wo.invoiceNumber ? `Invoice: <strong>${esc(wo.invoiceNumber)}</strong> &nbsp;·&nbsp;` : ''}
@@ -910,7 +917,8 @@ function renderRFDPendingPage() {
         <button class="btn btn-success rfd-dispatch-btn" data-id="${wo.id}">Documentation Done</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   renderPagination('rfdPagination', safePage, totalPages, total, 'setRfdPendingPage');
 
@@ -959,10 +967,16 @@ function renderRFDDonePage() {
 
   id('rfdDoneList').innerHTML = items.map(item => {
     const wo = item.workOrder;
+    const hasSupply = wo.supplyStatus && wo.supplyStatus !== 'NONE';
+    const supplyBadge = hasSupply
+      ? `<span class="supply-badge supply-badge-${wo.supplyStatus.toLowerCase()}" style="margin-left:6px">${wo.supplyStatus === 'SHORT' ? '⚠ Short' : wo.supplyStatus === 'EXCEED' ? '↑ Exceed' : '⚠↑ Both'}</span>` : '';
+    const remarkLine = hasSupply && wo.dlRemark
+      ? `<div style="font-size:.75rem;color:var(--text2);margin-top:3px;font-style:italic">💬 ${esc(wo.dlRemark)}</div>` : '';
     return `
-      <div class="rfd-card rfd-card-done">
+      <div class="rfd-card rfd-card-done${hasSupply ? ' supply-card-orange' : ''}">
         <div class="rfd-card-info">
-          <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a></div>
+          <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a>${supplyBadge}</div>
+          ${remarkLine}
           <div class="rfd-customer">${esc(wo.customerName)}</div>
           <div class="rfd-meta">
             ${wo.invoiceNumber ? `Invoice: <strong>${esc(wo.invoiceNumber)}</strong> &nbsp;·&nbsp;` : ''}
@@ -2583,12 +2597,9 @@ async function api(url, method = 'GET', body = null) {
   if (State.token) opts.headers['Authorization'] = `Bearer ${State.token}`;
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(url, opts);
-  if (res.status === 401) {
-    forceLogout();
-    throw new Error('Session expired. Please log in again.');
-  }
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
+  if (res.status === 401) { forceLogout(); throw new Error('Session expired. Please log in again.'); }
+  const data = await _parseResponse(res);
+  if (!res.ok) throw new Error(data?.message || `Server error (${res.status})`);
   return data;
 }
 
@@ -2596,13 +2607,20 @@ async function apiFormData(url, formData, method = 'POST') {
   const opts = { method, body: formData };
   if (State.token) opts.headers = { 'Authorization': `Bearer ${State.token}` };
   const res = await fetch(url, opts);
-  if (res.status === 401) {
-    forceLogout();
-    throw new Error('Session expired. Please log in again.');
-  }
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
+  if (res.status === 0 || res.type === 'error') throw new Error('Network error — please check your connection and try again.');
+  if (res.status === 401) { forceLogout(); throw new Error('Session expired. Please log in again.'); }
+  const data = await _parseResponse(res);
+  if (!res.ok) throw new Error(data?.message || `Server error (${res.status})`);
   return data;
+}
+
+async function _parseResponse(res) {
+  try {
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error('Invalid or empty response from server. Please try again.');
+  }
 }
 
 // ── UTILS ──────────────────────────────────────────────────────────
@@ -4275,6 +4293,7 @@ function renderSupplyTable(wo, supplyType, parts) {
   id('supplyModalFooter').innerHTML = `
     <span style="color:var(--text3);font-size:.82rem" id="supplySelCount">0 row(s) selected</span>
     <div style="display:flex;gap:8px;margin-left:auto">
+      ${showExceed ? `<button class="btn btn-outline" id="supplyAddRowBtn" style="border-color:var(--green);color:var(--green)" onclick="addSupplyRow()">＋ Add Row</button>` : ''}
       <button class="btn btn-outline" onclick="closeSupplyModal()">Cancel</button>
       <button class="btn btn-success" id="supplySubmitBtn">💾 Save &amp; Mark Ready For Dispatch</button>
     </div>
@@ -4300,6 +4319,39 @@ function renderSupplyTable(wo, supplyType, parts) {
   });
 
   id('supplySubmitBtn')?.addEventListener('click', () => submitSupplyEntries(wo, supplyType));
+}
+
+function addSupplyRow() {
+  const wo          = _supplyWo;
+  const supplyType  = _supplyType;
+  const showShort   = supplyType === 'SHORT'  || supplyType === 'BOTH';
+  const showExceed  = supplyType === 'EXCEED' || supplyType === 'BOTH';
+  const i           = _supplyParsedParts.length;
+
+  _supplyParsedParts.push({ woNum: wo.woNumber, poNo: '', poSrNo: '', partNo: '', qty: 0, poQty: '', invQty: 0, actualDespQty: 0, shortQty: 0, exceedQty: 0 });
+
+  const tbody = document.querySelector('#supplyModalBody .supply-table tbody');
+  if (!tbody) return;
+
+  const tr = document.createElement('tr');
+  tr.id = `supply-row-${i}`;
+  tr.innerHTML = `
+    <td style="text-align:center"><input type="checkbox" class="supply-row-chk" data-idx="${i}" checked></td>
+    <td><input class="supply-cell" data-idx="${i}" data-field="woNum" value="${esc(wo.woNumber)}" readonly style="background:var(--surface2);color:var(--text3);width:80px"></td>
+    <td><input class="supply-cell" data-idx="${i}" data-field="poNo" value="" placeholder="PO No." style="width:90px"></td>
+    <td><input class="supply-cell" data-idx="${i}" data-field="srNo" value="" placeholder="SR No." style="width:60px"></td>
+    <td><input class="supply-cell" data-idx="${i}" data-field="partNo" value="" placeholder="Part No." style="width:130px;font-family:monospace;font-size:.78rem"></td>
+    <td><input class="supply-cell supply-num" data-idx="${i}" data-field="poQty" value="" placeholder="—" style="width:60px"></td>
+    <td><input class="supply-cell supply-num" data-idx="${i}" data-field="invQty" value="0" style="width:60px"></td>
+    <td><input class="supply-cell supply-num" data-idx="${i}" data-field="actualDespQty" value="0" style="width:70px"></td>
+    ${showShort  ? `<td style="background:rgba(251,191,36,.10)"><input class="supply-cell supply-num" data-idx="${i}" data-field="shortQty" value="0" style="width:70px;font-weight:600;color:var(--amber)"></td>` : ''}
+    ${showExceed ? `<td style="background:rgba(34,197,94,.08)"><input class="supply-cell supply-num" data-idx="${i}" data-field="exceedQty" value="0" style="width:70px;font-weight:600;color:var(--green)"></td>` : ''}
+  `;
+  tbody.appendChild(tr);
+
+  tr.querySelector('.supply-row-chk').addEventListener('change', updateSupplySelCount);
+  tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  updateSupplySelCount();
 }
 
 function updateSupplySelCount() {

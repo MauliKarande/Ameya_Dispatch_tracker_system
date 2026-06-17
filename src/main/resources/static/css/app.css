@@ -956,13 +956,14 @@ height: 100px;
    ═══════════════════════════════════════════════════════════════ */
 
 /* Table row orange tint */
-.supply-row-orange { background: rgba(251,146,60,.08) !important; }
-.supply-row-orange:hover { background: rgba(251,146,60,.15) !important; }
+.supply-row-orange { background: rgba(251,146,60,.22) !important; }
+.supply-row-orange:hover { background: rgba(251,146,60,.32) !important; }
 
 /* Card orange tint */
 .supply-card-orange {
-  border-left: 3px solid #f97316 !important;
-  background: rgba(251,146,60,.06);
+  border-left: 4px solid #ea6c00 !important;
+  background: rgba(234,108,0,.22);
+  box-shadow: 0 0 0 1px rgba(234,108,0,.25);
 }
 
 /* Supply status badges */
