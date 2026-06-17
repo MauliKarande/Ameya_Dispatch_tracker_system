@@ -70,6 +70,9 @@
       <a href="#" class="nav-item nav-only-sales-exec" data-page="rfd" title="Ready for Dispatch">
         <span class="nav-icon">🚚</span><span class="nav-label">Ready for Dispatch</span>
       </a>
+      <a href="#" class="nav-item nav-store-cart" data-page="store-cart" title="Store Cart" style="display:none">
+        <span class="nav-icon">🛒</span><span class="nav-label">Store Cart <span id="cartBadge" class="cart-nav-badge" style="display:none"></span></span>
+      </a>
       <a href="#" class="nav-item nav-only-admin" data-page="user-mgmt" title="User Management">
         <span class="nav-icon">👥</span><span class="nav-label">User Management</span>
       </a>
@@ -357,6 +360,25 @@
       <div id="woDetailContent"></div>
     </section>
 
+    <!-- STORE CART PAGE -->
+    <section id="pageStoreCart" class="page">
+      <div class="page-header">
+        <div>
+          <h2 class="page-title">🛒 Store Cart</h2>
+          <p class="page-sub">Pending short &amp; exceed supply items to track</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" id="cartRefreshBtn">⟳ Refresh</button>
+        </div>
+      </div>
+      <div class="cart-tabs">
+        <button class="cart-tab active" data-ctab="all">All Pending</button>
+        <button class="cart-tab" data-ctab="short">Short Supply</button>
+        <button class="cart-tab" data-ctab="exceed">Exceed Supply</button>
+      </div>
+      <div id="cartContent" class="cart-content"></div>
+    </section>
+
     <!-- USER MANAGEMENT PAGE -->
     <section class="page" id="pageUserMgmt">
       <div class="page-header">
@@ -407,6 +429,18 @@
       <div id="excelViewerLoading" style="text-align:center;padding:40px;color:var(--text3)">Loading file…</div>
       <div id="excelViewerTable" style="display:none;overflow:auto"></div>
     </div>
+  </div>
+</div>
+
+<!-- SUPPLY ENTRY MODAL -->
+<div id="supplyModal" class="modal-overlay" style="display:none">
+  <div class="modal-box supply-modal-box">
+    <div class="modal-header">
+      <h3 id="supplyModalTitle">Supply Entry</h3>
+      <button class="modal-close" onclick="closeSupplyModal()">✕</button>
+    </div>
+    <div class="modal-body" id="supplyModalBody" style="padding:0;overflow:auto;flex:1"></div>
+    <div class="modal-footer" id="supplyModalFooter"></div>
   </div>
 </div>
 
@@ -478,6 +512,11 @@
             style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:5px;padding:3px 11px;font-size:.78rem;font-weight:600;cursor:pointer">
             📊 Check Parts
           </button>
+          <button onclick="pingTallyServer()" id="tallyPingBtn"
+            style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;border-radius:5px;padding:3px 11px;font-size:.78rem;font-weight:600;cursor:pointer">
+            🔌 Check Tally Server
+          </button>
+          <span id="tallyPingStatus" style="font-size:.78rem;font-weight:600"></span>
         </div>
         <!-- Check parts summary panel (hidden by default) -->
         <div id="tallyCheckPanel" style="display:none;margin-bottom:10px"></div>

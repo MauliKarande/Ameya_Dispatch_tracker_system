@@ -102,6 +102,7 @@ public class TallyInvoiceController {
                 .findTopActiveByWorkOrderIdAndFileType(workOrderId, FileStorage.FileType.EXCEL);
         if (xlsOpt.isPresent()) {
             FileStorage fs = xlsOpt.get();
+            dto.setExcelFileId(fs.getId());
             log.info("Parsing Excel: {}", fs.getFilePath());
             List<TallyPartDTO> parts = excelParser.parseParts(fs.getFilePath(), customerName, method);
             dto.setParts(parts);
@@ -211,6 +212,28 @@ public class TallyInvoiceController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
         }
+    }
+
+    /**
+     * GET /api/tally/export-details?party=...&mode=...
+     * Returns saved export details (terms, ports, etc.) for a party+mode combination.
+     */
+    @GetMapping("/export-details")
+    public ResponseEntity<ApiResponse<Map<String, String>>> exportDetails(
+            @RequestParam String party,
+            @RequestParam String mode) {
+        Map<String, String> details = customData.getExportDetails(party, mode);
+        return ResponseEntity.ok(ApiResponse.ok(details != null ? details : new HashMap<>()));
+    }
+
+    /**
+     * GET /api/tally/ping
+     * Checks if the Tally HTTP server is reachable on localhost:9000.
+     */
+    @GetMapping("/ping")
+    public ResponseEntity<ApiResponse<Map<String, String>>> ping() {
+        Map<String, String> result = tallyService.pingTally();
+        return ResponseEntity.ok(ApiResponse.ok(result));
     }
 
     /**

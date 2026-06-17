@@ -11,7 +11,10 @@ target/
 application-prod.properties
 USER_CREDENTIALS.txt
 
-# Runtime data - not source code
+# Dev environment - keep local config changes out of git
+src/main/resources/application.properties
+
+# Runtime data files
 uploads/
 backup-database/
 .claude/

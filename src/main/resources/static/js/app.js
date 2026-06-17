@@ -224,10 +224,13 @@ function showApp() {
   setupNotifications();
   startAutoSync();
   setupNotificationBanner();
+  // Cart badge for STORE and GM
+  const _role = State.user?.role;
+  if (_role === 'STORE' || _role === 'GENERAL_MANAGER') refreshCartBadge();
 
   const savedPage = localStorage.getItem('lastPage');
   const savedWoId = localStorage.getItem('lastWoId');
-  const allowedPages = ['dashboard','create-wo','all-wo','rfd','detail','user-mgmt'];
+  const allowedPages = ['dashboard','create-wo','all-wo','rfd','detail','user-mgmt','store-cart'];
   let targetPage = savedPage && allowedPages.includes(savedPage) ? savedPage : null;
 
   if (State.user?.role === 'ADMIN') {
@@ -292,6 +295,7 @@ function setupUserUI() {
 
   const isGM          = u.role === 'GENERAL_MANAGER';
   const isAdmin       = u.role === 'ADMIN';
+  const isStore       = u.role === 'STORE';
   const isInvoiceCreator = u.role === 'INVOICE_CREATOR';
   const isSalesExec   = u.role === 'SALES_EXECUTIVE';
 
@@ -301,6 +305,8 @@ function setupUserUI() {
   document.querySelectorAll('.nav-only-invoice-creator').forEach(el => el.style.display = isInvoiceCreator ? '' : 'none');
   document.querySelectorAll('.nav-only-sales-exec').forEach(el => el.style.display = isSalesExec ? '' : 'none');
   document.querySelectorAll('.nav-hide-sales-exec').forEach(el => el.style.display = isSalesExec ? 'none' : '');
+  // Store Cart visible to Store + General Manager
+  document.querySelectorAll('.nav-store-cart').forEach(el => el.style.display = (isStore || isGM) ? '' : 'none');
 
   // ADMIN cannot touch dispatches — redirect to user-mgmt as home
   if (isAdmin) {
@@ -355,12 +361,13 @@ function navigateTo(page) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
   const pageMap = {
-    'dashboard':  { pageId:'pageDashboard',  title:'Dashboard' },
-    'create-wo':  { pageId:'pageCreateWo',   title:'New Dispatch' },
-    'all-wo':     { pageId:'pageAllWo',      title:'All Dispatch Lists' },
-    'rfd':        { pageId:'pageRfd',        title:'Ready for Dispatch' },
-    'detail':     { pageId:'pageWoDetail',   title:'Dispatch Detail' },
-    'user-mgmt':  { pageId:'pageUserMgmt',   title:'User Management' },
+    'dashboard':   { pageId:'pageDashboard',  title:'Dashboard' },
+    'create-wo':   { pageId:'pageCreateWo',   title:'New Dispatch' },
+    'all-wo':      { pageId:'pageAllWo',      title:'All Dispatch Lists' },
+    'rfd':         { pageId:'pageRfd',        title:'Ready for Dispatch' },
+    'detail':      { pageId:'pageWoDetail',   title:'Dispatch Detail' },
+    'user-mgmt':   { pageId:'pageUserMgmt',   title:'User Management' },
+    'store-cart':  { pageId:'pageStoreCart',  title:'Store Cart' },
   };
   const info = pageMap[page];
   if (!info) return;
@@ -379,6 +386,7 @@ function navigateTo(page) {
   if (page === 'all-wo') loadAllWo();
   if (page === 'rfd') loadRFDPage();
   if (page === 'user-mgmt') loadUserManagement();
+  if (page === 'store-cart') loadStoreCart();
 }
 
 // ── LOOKUP DATA ────────────────────────────────────────────────────
@@ -676,6 +684,7 @@ function renderWoTable(list) {
 
 function woCard(w) {
   const statusClass = w.status === 'COMPLETED' ? 'status-completed' : w.status === 'REVISED' ? 'status-revised' : '';
+  const supplyClass = (w.supplyStatus && w.supplyStatus !== 'NONE') ? ' supply-card-orange' : '';
   const steps = [
     { label: 'Stock',    status: w.stockStatus },
     { label: 'Packing',  status: w.packagingStatus },
@@ -694,7 +703,7 @@ function woCard(w) {
   const pdfBtn = w.latestPdfFileId
     ? `<a href="/api/files/view/${w.latestPdfFileId}?token=${State.token}" target="_blank" class="btn btn-outline btn-xs">↓ PDF</a>` : '';
 
-  return `<div class="wo-card ${statusClass}" data-detail="${w.id}">
+  return `<div class="wo-card ${statusClass}${supplyClass}" data-detail="${w.id}">
     <div class="wo-card-top">
       <div>
         <div class="wo-card-num">${esc(w.woNumber)}${w.revised ? ' <span style="color:var(--amber);font-size:.75rem">↻ v'+w.version+'</span>' : ''}</div>
@@ -720,8 +729,9 @@ function woRow(w) {
   const flags = `${w.hasNote ? '📝' : ''}${w.hasInvoiceIssue ? ' ⚠' : ''}`;
   const versionBadge = w.revised ? `<span class="badge badge-revised" style="font-size:.68rem">v${w.version}</span>` : `v${w.version}`;
 
-  return `<tr data-detail="${w.id}">
-    <td><span class="wo-number-link">${w.woNumber}</span>${w.revised?`<br><span style="font-size:.7rem;color:var(--amber)">↻ Revised</span>`:''}</td>
+  const supplyRowCls = (w.supplyStatus && w.supplyStatus !== 'NONE') ? ' supply-row-orange' : '';
+  return `<tr data-detail="${w.id}" class="${supplyRowCls}">
+    <td><span class="wo-number-link">${w.woNumber}</span>${w.revised?`<br><span style="font-size:.7rem;color:var(--amber)">↻ Revised</span>`:''}${w.supplyStatus&&w.supplyStatus!=='NONE'?`<br><span class="supply-badge supply-badge-${w.supplyStatus.toLowerCase()}" style="font-size:.65rem">${w.supplyStatus==='SHORT'?'⚠ Short':w.supplyStatus==='EXCEED'?'↑ Exceed':'⚠↑ Both'}</span>`:''}</td>
     <td><span style="font-size:.82rem">${esc(w.customerName)}</span><br><span style="font-size:.7rem;color:var(--text3)">${formatDate(w.woDate)}</span></td>
     <td><span style="font-size:.8rem">${esc(w.shipmentMode||'—')}</span></td>
     <td><span class="badge badge-ip" style="font-size:.72rem">${esc(w.invoiceType||'Commercial')}</span></td>
@@ -1273,6 +1283,12 @@ function renderWoDetail(wo) {
       </div>
     </div>
 
+    <!-- DL Remark (orange, visible to all) -->
+    ${renderRemarkSection(wo, role)}
+
+    <!-- Supply Entries Summary (if any) -->
+    ${renderSupplyEntriesSection(wo, role)}
+
     <!-- Logs Button -->
     <div style="margin-top:20px;text-align:center">
       <button class="btn btn-outline" id="viewLogsBtn">📋 View Logs</button>
@@ -1370,8 +1386,13 @@ function renderRFDStep(wo, role) {
   const canToggle = role === 'STORE';
   const nextDone = (wo.collectionStatus||'PENDING') === 'DONE';
   const canRevert = canToggle && isDone && !nextDone;
+  const supplyBadge = wo.supplyStatus && wo.supplyStatus !== 'NONE'
+    ? `<span class="supply-badge supply-badge-${wo.supplyStatus.toLowerCase()}">${wo.supplyStatus === 'SHORT' ? '⚠ Short' : wo.supplyStatus === 'EXCEED' ? '↑ Exceed' : '⚠↑ Both'}</span>` : '';
   return `<div class="step-row">
-    <div><div class="step-label">Ready For Dispatch</div><div class="step-sub">${isDone && wo.readyForDispatchUpdatedBy ? 'By '+wo.readyForDispatchUpdatedBy+(wo.readyForDispatchUpdatedAt?' · '+formatDate(wo.readyForDispatchUpdatedAt):'') : ''}</div></div>
+    <div>
+      <div class="step-label">Ready For Dispatch ${supplyBadge}</div>
+      <div class="step-sub">${isDone && wo.readyForDispatchUpdatedBy ? 'By '+wo.readyForDispatchUpdatedBy+(wo.readyForDispatchUpdatedAt?' · '+formatDate(wo.readyForDispatchUpdatedAt):'') : ''}</div>
+    </div>
     <div class="step-actions">
       ${stepBadge(wo.readyForDispatchStatus||'PENDING')}
       ${canToggle && !isDone ? `<button class="btn btn-success btn-xs" id="rfdDoneBtn">Mark Done</button>` : ''}
@@ -1550,9 +1571,7 @@ function bindDetailActions(wo) {
   });
 
   // Ready For Dispatch
-  id('rfdDoneBtn')?.addEventListener('click', async () => {
-    await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=DONE`, 'Ready For Dispatch marked Done');
-  });
+  id('rfdDoneBtn')?.addEventListener('click', () => showRfdOptions(wo));
   id('rfdRevertBtn')?.addEventListener('click', async () => {
     await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=PENDING`, 'Ready For Dispatch reverted');
   });
@@ -1574,6 +1593,9 @@ function bindDetailActions(wo) {
   // Notes & Issues
   id('editNoteBtn')?.addEventListener('click', () => showNoteModal(wo));
   id('reportIssueBtn')?.addEventListener('click', () => showIssueModal(wo));
+
+  // Remark
+  bindRemarkBtn(wo);
 
   // Files
   id('reviseExcelBtn')?.addEventListener('click', () => showRevisionModal(wo));
@@ -2749,7 +2771,14 @@ function closeExcelViewer() {
 function _getCellText(ws, r, c) {
   const cell = ws[XLSX.utils.encode_cell({ r, c })];
   if (!cell) return '';
-  if (cell.w !== undefined) return cell.w.trim();
+  if (cell.w !== undefined) {
+    // If Excel formatted a numeric cell as scientific notation (e.g. 2.04E+11),
+    // return the full integer string so part numbers match Tally exactly.
+    if (cell.t === 'n' && /^-?\d+\.?\d*[eE][+\-]?\d+$/.test(cell.w.trim())) {
+      return String(Math.round(cell.v));
+    }
+    return cell.w.trim();
+  }
   if (cell.t === 'n' && cell.z) {
     try { return XLSX.SSF.format(cell.z, cell.v).trim(); } catch (_) { return String(cell.v).trim(); }
   }
@@ -2761,6 +2790,47 @@ function _getCellText(ws, r, c) {
 // handles hyphen (-), en-dash (–), em-dash (—), Unicode minus (−), and empty/whitespace.
 function _isDash(val) {
   return !val || /^[\-–—−\s]+$/.test(val);
+}
+
+// Download an Excel file and parse it for Tally parts using the same logic as
+// Invoice View (visible columns only, DESP. AMT. non-empty rows only).
+// Returns array of {row, partNo, qty, amount, poNo, poSrNo, ratePc, deleted}.
+async function _parseExcelForTallyParts(fileId) {
+  const res = await fetch(`/api/files/download/${fileId}?token=${State.token}`);
+  if (!res.ok) throw new Error('Cannot download Excel (id=' + fileId + ')');
+  const wb = XLSX.read(await res.arrayBuffer(), { type: 'array', cellStyles: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws || !ws['!ref']) return [];
+  const range    = XLSX.utils.decode_range(ws['!ref']);
+  const colProps = ws['!cols'] || [];
+  const visCols  = [];
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    if (!colProps[c]?.hidden) visCols.push(c);
+  }
+  const found = _findInvoiceColumns(ws, range, visCols);
+  if (!found) throw new Error('Cannot detect invoice columns (P.O.NO., PART NO., DESP. AMT. etc.) in Excel file');
+  const { dataStartRow, colMap } = found;
+  const rowHidden = ws['!rows'] || [];
+  const allKeys   = Object.keys(colMap);
+  const parts     = [];
+  for (let r = dataStartRow; r <= range.e.r; r++) {
+    if (rowHidden[r]?.hidden) continue;
+    const amtStr = colMap.despAmt !== undefined ? _getCellText(ws, r, colMap.despAmt) : '';
+    if (_isDash(amtStr) || amtStr === '0' || amtStr === '') continue;
+    // Skip total/subtotal rows (only 1 or fewer detected columns have values)
+    if (allKeys.filter(k => _getCellText(ws, r, colMap[k])).length < 2) continue;
+    const partNo  = colMap.part    !== undefined ? _getCellText(ws, r, colMap.part)    : '';
+    const despQty = colMap.despQty !== undefined ? _getCellText(ws, r, colMap.despQty) : '';
+    const poNo    = colMap.po      !== undefined ? _getCellText(ws, r, colMap.po)      : '';
+    const srNo    = colMap.sr      !== undefined ? _getCellText(ws, r, colMap.sr)      : '';
+    const rate    = colMap.rate    !== undefined ? _getCellText(ws, r, colMap.rate)    : '';
+    const qty     = parseInt(String(despQty).replace(/,/g, ''), 10) || 0;
+    const amount  = parseFloat(String(amtStr).replace(/,/g, ''))    || 0;
+    const ratePc  = parseFloat(String(rate).replace(/,/g, ''))      || 0;
+    if (!partNo && amount === 0) continue;
+    parts.push({ row: r + 1, partNo, qty, amount, poNo, poSrNo: srNo, ratePc, deleted: false });
+  }
+  return parts;
 }
 
 // Scan only visible (non-hidden) columns to find the 8 invoice column positions.
@@ -3388,8 +3458,13 @@ async function openTallyModal(wo) {
     const res = await api(`/api/tally/prefill/${wo.id}?method=${State.tallyImportMethod}`, 'GET');
     const d = res.data;
 
-    // Store parts
-    State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
+    // Parse parts from Excel client-side (same as Invoice View) if file ID available.
+    // Falls back to backend-parsed parts when no file is present.
+    if (d.excelFileId) {
+      State.tallyParts = await _parseExcelForTallyParts(d.excelFileId);
+    } else {
+      State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
+    }
 
     // Populate Step 2 fields
     setVal('tallyVoucherNo', d.nextVoucherNo || '');
@@ -3433,9 +3508,9 @@ async function openTallyModal(wo) {
       if (preview) preview.textContent = (d.mailingName ? d.mailingName + '\n' : '') + d.addressLines.join('\n');
     }
 
-    // Show parse error if any
-    if (d.parseError) {
-      if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '⚠ ' + d.parseError; }
+    // Status line
+    if (State.tallyParts.length === 0 && !d.excelFileId) {
+      if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '⚠ ' + (d.parseError || 'No Excel file uploaded'); }
     } else {
       if (statusEl) { statusEl.style.color = ''; statusEl.textContent = `${State.tallyParts.length} part(s) loaded`; }
     }
@@ -3580,7 +3655,7 @@ async function checkTallyParts() {
 
   panel.style.display = 'block';
   panel.innerHTML = `<div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:6px;padding:14px;text-align:center;color:var(--navy,#1e3a6e)">
-    🔄 Checking ${active.length} parts against Tally database…
+    🔄 Checking ${active.length} parts in Tally one by one…
   </div>`;
 
   try {
@@ -3594,24 +3669,56 @@ async function checkTallyParts() {
   }
 }
 
+// ── Ping Tally Server ─────────────────────────────────────────────────────
+async function pingTallyServer() {
+  const btn = id('tallyPingBtn');
+  const statusEl = id('tallyPingStatus');
+  if (!btn || !statusEl) return;
+  btn.disabled = true;
+  btn.textContent = '🔌 Checking…';
+  statusEl.textContent = '';
+  try {
+    const res = await api('/api/tally/ping', 'GET');
+    const d = res.data;
+    if (d.status === 'UP') {
+      statusEl.textContent = '✓ Tally is running';
+      statusEl.style.color = '#15803d';
+    } else {
+      statusEl.textContent = '✗ Tally not reachable — open Tally and enable HTTP Server (port 9000)';
+      statusEl.style.color = '#dc2626';
+    }
+  } catch (e) {
+    statusEl.textContent = '✗ Cannot reach Tally — make sure it is open with HTTP Server on port 9000';
+    statusEl.style.color = '#dc2626';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔌 Check Tally Server';
+  }
+}
+
 function renderTallyCheckPanel() {
   const panel = id('tallyCheckPanel');
   if (!panel) return;
   const result   = State.tallyCheckResult || { found: [], notFound: [] };
   const foundSet = new Set((result.found || []).map(s => s.toUpperCase()));
+  const resultsMap = {};
+  (result.results || []).forEach(r => { resultsMap[r.partNo.toUpperCase()] = r; });
   const active   = State.tallyParts.filter(p => !p.deleted);
   const deleted  = State.tallyParts.filter(p =>  p.deleted);
   const foundCnt    = active.filter(p => foundSet.has(p.partNo.toUpperCase())).length;
   const notFoundCnt = active.length - foundCnt;
 
   const activeRows = active.map(p => {
-    const oi     = State.tallyParts.indexOf(p);
-    const exists = foundSet.has(p.partNo.toUpperCase());
+    const oi       = State.tallyParts.indexOf(p);
+    const exists   = foundSet.has(p.partNo.toUpperCase());
+    const pr       = resultsMap[p.partNo.toUpperCase()];
+    const stockQty = pr ? pr.qty : (result.results ? '?' : '');
     return `<tr style="border-bottom:1px solid #e5e7eb;background:${exists ? '#f0fdf4' : '#fef2f2'}">
       <td style="padding:4px 8px;text-align:center"><input type="checkbox" class="tally-check-cb" data-idx="${oi}" ${!exists ? 'checked' : ''}></td>
       <td style="padding:4px 8px;font-weight:500;font-size:.82rem">${esc(p.partNo)}</td>
       <td style="padding:4px 6px;text-align:right;font-size:.8rem">${p.qty}</td>
       <td style="padding:4px 8px;text-align:right;font-size:.8rem">${p.amount.toFixed(2)}</td>
+      <td style="padding:4px 8px;text-align:right;font-size:.8rem;font-weight:600;color:${exists ? '#15803d' : '#94a3b8'}">${stockQty}</td>
       <td style="padding:4px 8px;font-size:.8rem;font-weight:600;color:${exists ? '#15803d' : '#dc2626'}">${exists ? '✓ In Tally' : '✗ Not in Tally'}</td>
       <td style="padding:4px 6px;text-align:center">
         <button style="background:#fee2e2;color:#dc2626;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:.75rem"
@@ -3621,7 +3728,7 @@ function renderTallyCheckPanel() {
   }).join('');
 
   const deletedRows = deleted.length === 0 ? '' :
-    `<tr><td colspan="6" style="padding:4px 8px;background:#ffe4e4;font-size:.73rem;color:#dc2626;font-weight:600">— ${deleted.length} deleted (↩ to restore) —</td></tr>` +
+    `<tr><td colspan="7" style="padding:4px 8px;background:#ffe4e4;font-size:.73rem;color:#dc2626;font-weight:600">— ${deleted.length} deleted (↩ to restore) —</td></tr>` +
     deleted.map(p => {
       const oi = State.tallyParts.indexOf(p);
       return `<tr style="background:#fff5f5;opacity:.72">
@@ -3629,6 +3736,7 @@ function renderTallyCheckPanel() {
         <td style="padding:4px 8px;text-decoration:line-through;color:var(--text3);font-size:.82rem">${esc(p.partNo)}</td>
         <td style="padding:4px 6px;text-align:right;font-size:.8rem">${p.qty}</td>
         <td style="padding:4px 8px;text-align:right;font-size:.8rem">${p.amount.toFixed(2)}</td>
+        <td style="padding:4px 8px;font-size:.8rem;color:#94a3b8">—</td>
         <td style="padding:4px 8px;font-size:.8rem;color:#dc2626">⊘ Deleted</td>
         <td style="padding:4px 6px;text-align:center">
           <button style="background:#e0f2fe;color:#0369a1;border:none;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:.75rem"
@@ -3657,8 +3765,9 @@ function renderTallyCheckPanel() {
               <th style="padding:4px 8px;width:28px"><input type="checkbox" title="Select all"
                 onchange="document.querySelectorAll('.tally-check-cb,.tally-restore-cb').forEach(c=>c.checked=this.checked)"></th>
               <th style="padding:4px 10px;text-align:left">Part No.</th>
-              <th style="padding:4px 6px;text-align:right">Qty</th>
+              <th style="padding:4px 6px;text-align:right">Desp Qty</th>
               <th style="padding:4px 8px;text-align:right">Amount</th>
+              <th style="padding:4px 8px;text-align:right">Stock Qty</th>
               <th style="padding:4px 10px;text-align:left">Status</th>
               <th style="padding:4px 6px"></th>
             </tr>
@@ -3666,7 +3775,7 @@ function renderTallyCheckPanel() {
           <tbody>${activeRows}${deletedRows}</tbody>
         </table>
       </div>
-      ${result.totalInTally !== undefined ? `<div style="margin-top:5px;font-size:.72rem;color:var(--text3)">Tally has ${result.totalInTally} total stock items</div>` : ''}
+      ${result.totalChecked !== undefined ? `<div style="margin-top:5px;font-size:.72rem;color:var(--text3)">Checked ${result.totalChecked} parts in Tally</div>` : ''}
     </div>`;
   panel.style.display = 'block';
 }
@@ -3747,12 +3856,87 @@ function applyTallyRateForCurrency(currKey) {
 async function savePartyToJson() {
   const req = collectTallyRequest();
   if (!req.partyTally) { showToast('Party name is required', 'error'); return; }
+
+  const currentMode = req.airSea || 'AIR';
+  const otherMode   = currentMode === 'AIR' ? 'SEA' : 'AIR';
+
+  // Normalise form data to snake_case for display
+  const curData = {
+    terms: req.terms, port_loading: req.portLoading, port_discharge: req.portDischarge,
+    final_dest: req.finalDest, country_dest: req.countryDest,
+    buyer_name: req.buyerName, buyer_address: req.buyerAddress
+  };
+
+  // Load the other mode's saved data from backend
+  let otherData = {};
   try {
-    await api('/api/tally/save-party', 'POST', req);
-    showToast('Party details saved to JSON', 'success');
-  } catch (e) {
-    showToast('Save failed: ' + (e.message || 'unknown error'), 'error');
+    const r = await api(`/api/tally/export-details?party=${encodeURIComponent(req.partyTally)}&mode=${encodeURIComponent(otherMode)}`, 'GET');
+    otherData = r.data || {};
+  } catch (_) {}
+
+  const airData = currentMode === 'AIR' ? curData : otherData;
+  const seaData = currentMode === 'SEA' ? curData : otherData;
+
+  function fld(eid, label, val, fullRow) {
+    return `<div style="${fullRow ? 'grid-column:1/-1;' : ''}display:flex;flex-direction:column;gap:2px">
+      <label style="font-size:.72rem;font-weight:600;color:#4b5563">${label}</label>
+      <input id="${eid}" type="text" value="${esc(val || '')}"
+        style="padding:4px 7px;border:1px solid #d1d5db;border-radius:4px;font-size:.8rem;width:100%;box-sizing:border-box">
+    </div>`;
   }
+
+  function modeBlock(pfx, mode, data) {
+    const air = mode === 'AIR';
+    return `<div style="background:${air?'#f0f9ff':'#f0fdf4'};border:1px solid ${air?'#bae6fd':'#bbf7d0'};border-radius:6px;padding:10px 12px">
+      <div style="font-size:.8rem;font-weight:700;color:${air?'#0369a1':'#15803d'};margin-bottom:8px">${air?'✈':'🚢'} ${mode} Shipment</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        ${fld(pfx+'-terms',    'Terms of Delivery',         data.terms         || '')}
+        ${fld(pfx+'-portL',    'Port of Loading',            data.port_loading  || '')}
+        ${fld(pfx+'-portD',    'Port of Discharge',          data.port_discharge|| '')}
+        ${fld(pfx+'-finalDest','Final Destination',          data.final_dest    || '')}
+        ${fld(pfx+'-ctrDest',  'Country of Destination',     data.country_dest  || '')}
+        ${fld(pfx+'-buyerName','Buyer Name (if different)',  data.buyer_name    || '', true)}
+        ${fld(pfx+'-buyerAddr','Buyer Address',              data.buyer_address || '', true)}
+      </div>
+    </div>`;
+  }
+
+  const bodyHtml = `
+    <div style="margin-bottom:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;font-size:.82rem">
+      <strong>Party:</strong> ${esc(req.partyTally)} &nbsp;&nbsp;
+      <strong>Currency:</strong> ${esc(req.currency || '')} &nbsp;&nbsp;
+      <strong>Country:</strong> ${esc(req.partyCountry || '')}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${modeBlock('sp-air','AIR',airData)}
+      ${modeBlock('sp-sea','SEA',seaData)}
+    </div>`;
+
+  showModal('💾 Save Party to JSON', bodyHtml, [
+    { label: '💾 Save Both Modes', cls: 'btn-primary', id: 'spSaveBothBtn' },
+    { label: 'Cancel', cls: 'btn-outline', close: true }
+  ], { wide: true });
+
+  id('spSaveBothBtn')?.addEventListener('click', async () => {
+    const gv = eid => document.getElementById(eid)?.value?.trim() || '';
+    const base = { partyTally: req.partyTally, currency: req.currency, partyCountry: req.partyCountry };
+    const airReq = { ...base, airSea: 'AIR',
+      terms: gv('sp-air-terms'), portLoading: gv('sp-air-portL'), portDischarge: gv('sp-air-portD'),
+      finalDest: gv('sp-air-finalDest'), countryDest: gv('sp-air-ctrDest'),
+      buyerName: gv('sp-air-buyerName'), buyerAddress: gv('sp-air-buyerAddr') };
+    const seaReq = { ...base, airSea: 'SEA',
+      terms: gv('sp-sea-terms'), portLoading: gv('sp-sea-portL'), portDischarge: gv('sp-sea-portD'),
+      finalDest: gv('sp-sea-finalDest'), countryDest: gv('sp-sea-ctrDest'),
+      buyerName: gv('sp-sea-buyerName'), buyerAddress: gv('sp-sea-buyerAddr') };
+    try {
+      await api('/api/tally/save-party', 'POST', airReq);
+      await api('/api/tally/save-party', 'POST', seaReq);
+      closeModal();
+      showToast('Saved AIR + SEA details for ' + req.partyTally, 'success');
+    } catch (e) {
+      showToast('Save failed: ' + (e.message || 'error'), 'error');
+    }
+  });
 }
 
 function updateTallyStats() {
@@ -3878,31 +4062,43 @@ async function createTallyFolders() {
   }
 }
 
-function onTallyModeChange() {
+async function onTallyModeChange() {
   if (State.tallyCurrentTab === 4) buildTallyReview();
+  const party = getVal('tallyPartyName');
+  const mode  = document.querySelector('input[name="tallyMode"]:checked')?.value || 'AIR';
+  if (!party) return;
+  try {
+    const res = await api(`/api/tally/export-details?party=${encodeURIComponent(party)}&mode=${encodeURIComponent(mode)}`, 'GET');
+    const d = res.data || {};
+    // Always update — if no data saved for this mode the fields go blank (correct behaviour)
+    setVal('tallyTerms',       d.terms          ?? '');
+    setVal('tallyPortL',       d.port_loading    ?? '');
+    setVal('tallyPortD',       d.port_discharge  ?? '');
+    setVal('tallyFinalDest',   d.final_dest      ?? '');
+    setVal('tallyCountryDest', d.country_dest    ?? '');
+    setVal('tallyBuyerName',   d.buyer_name      ?? '');
+    setVal('tallyBuyerAddr',   d.buyer_address   ?? '');
+  } catch (_) {}
 }
 
 async function switchTallyMethod() {
-  State.tallyImportMethod = State.tallyImportMethod === 'v374' ? 'v35' : 'v374';
-  updateTallyMethodLabel();
-
   const statusEl = id('tallyPartsStatus');
   const tbody = id('tallyPartsTbody');
-  if (statusEl) statusEl.textContent = `Re-loading with ${State.tallyImportMethod.toUpperCase()}…`;
+  if (statusEl) statusEl.textContent = 'Re-loading from Invoice View…';
   if (tbody) tbody.innerHTML = '';
   State.tallyParts = [];
   updateTallyStats();
 
   try {
-    const res = await api(`/api/tally/prefill/${State.tallyWoId}?method=${State.tallyImportMethod}`, 'GET');
+    const res = await api(`/api/tally/prefill/${State.tallyWoId}?method=v374`, 'GET');
     const d = res.data;
-    State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
-    renderTallyParts();
-    if (d.parseError) {
-      if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '⚠ ' + d.parseError; }
+    if (d.excelFileId) {
+      State.tallyParts = await _parseExcelForTallyParts(d.excelFileId);
     } else {
-      if (statusEl) { statusEl.style.color = ''; statusEl.textContent = `${State.tallyParts.length} part(s) loaded (${State.tallyImportMethod.toUpperCase()})`; }
+      State.tallyParts = (d.parts || []).map(p => ({ ...p, deleted: false }));
     }
+    renderTallyParts();
+    if (statusEl) { statusEl.style.color = ''; statusEl.textContent = `${State.tallyParts.length} part(s) loaded`; }
   } catch (e) {
     showToast('Re-parse failed: ' + e.message, 'error');
     if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '✗ ' + e.message; }
@@ -3912,16 +4108,8 @@ async function switchTallyMethod() {
 function updateTallyMethodLabel() {
   const lbl = id('tallyMethodLabel');
   const btn = id('tallyMethodBtn');
-  if (!lbl || !btn) return;
-  if (State.tallyImportMethod === 'v374') {
-    lbl.textContent = 'Import: V3.7.4 (default)';
-    btn.textContent = '⚠ Wrong parts? Switch to V3.5';
-    btn.style.background = '#e65100';
-  } else {
-    lbl.textContent = 'Import: V3.5 (strict part filter)';
-    btn.textContent = '↩ Switch back to V3.7.4';
-    btn.style.background = '#1e3a6e';
-  }
+  if (lbl) lbl.textContent = 'Parts: from Invoice View data';
+  if (btn) btn.style.display = 'none';
 }
 
 function parsePackingText(text) {
@@ -3963,3 +4151,475 @@ function setVal(elId, val) {
 function getVal(elId) {
   return id(elId)?.value?.trim() ?? '';
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SUPPLY DISCREPANCY — RFD 4-option dialog
+// ═══════════════════════════════════════════════════════════════════
+
+function showRfdOptions(wo) {
+  showModal('Ready For Dispatch — How to mark?',
+    `<div class="rfd-option-grid">
+      <button class="rfd-option-btn rfd-done" id="rfdOptDone">
+        <span class="rfd-opt-icon">✅</span>
+        <span class="rfd-opt-title">Mark as Done</span>
+        <span class="rfd-opt-sub">All parts dispatched exactly as invoiced</span>
+      </button>
+      <button class="rfd-option-btn rfd-short" id="rfdOptShort">
+        <span class="rfd-opt-icon">⚠️</span>
+        <span class="rfd-opt-title">Mark with Short Supply</span>
+        <span class="rfd-opt-sub">Some parts sent less than invoiced — remaining to send later</span>
+      </button>
+      <button class="rfd-option-btn rfd-exceed" id="rfdOptExceed">
+        <span class="rfd-opt-icon">⬆️</span>
+        <span class="rfd-opt-title">Mark with Exceed Supply</span>
+        <span class="rfd-opt-sub">Some parts sent more than invoiced</span>
+      </button>
+      <button class="rfd-option-btn rfd-both" id="rfdOptBoth">
+        <span class="rfd-opt-icon">⚠️⬆️</span>
+        <span class="rfd-opt-title">Mark with Both Short &amp; Exceed</span>
+        <span class="rfd-opt-sub">Some parts short, some parts exceeded</span>
+      </button>
+    </div>`,
+    [{ label: 'Cancel', cls: 'btn-outline', close: true }]
+  );
+  id('rfdOptDone')?.addEventListener('click', async () => {
+    closeModal();
+    await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=DONE`, 'Ready For Dispatch marked Done');
+  });
+  id('rfdOptShort')?.addEventListener('click', () => { closeModal(); openSupplyModal(wo, 'SHORT'); });
+  id('rfdOptExceed')?.addEventListener('click', () => { closeModal(); openSupplyModal(wo, 'EXCEED'); });
+  id('rfdOptBoth')?.addEventListener('click', () => { closeModal(); openSupplyModal(wo, 'BOTH'); });
+}
+
+// ── Supply Modal ─────────────────────────────────────────────────
+
+let _supplyWo = null;
+let _supplyType = null;
+let _supplyParsedParts = [];
+
+async function openSupplyModal(wo, supplyType) {
+  _supplyWo   = wo;
+  _supplyType = supplyType;
+  _supplyParsedParts = [];
+
+  const typeLabel = supplyType === 'SHORT' ? 'Short Supply'
+                  : supplyType === 'EXCEED' ? 'Exceed Supply'
+                  : 'Both Short & Exceed Supply';
+  id('supplyModalTitle').textContent = `${typeLabel} — ${wo.woNumber} · ${wo.customerName}`;
+  id('supplyModalBody').innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3)">Loading parts from Excel…</div>`;
+  id('supplyModalFooter').innerHTML = '';
+  id('supplyModal').style.display = 'flex';
+
+  // Get the latest excel file ID
+  const fileId = wo.latestExcelFileId || (wo.excelFiles && wo.excelFiles.length > 0 ? wo.excelFiles[wo.excelFiles.length-1].id : null);
+  if (!fileId) {
+    id('supplyModalBody').innerHTML = `<div class="supply-no-excel"><span style="font-size:2rem">📊</span><p>No Excel file found for this dispatch.</p><p style="color:var(--text3);font-size:.85rem">Please upload an Excel file first.</p></div>`;
+    id('supplyModalFooter').innerHTML = `<button class="btn btn-outline" onclick="closeSupplyModal()">Close</button>`;
+    return;
+  }
+
+  try {
+    const parts = await _parseExcelForTallyParts(fileId);
+    _supplyParsedParts = parts;
+    renderSupplyTable(wo, supplyType, parts);
+  } catch(e) {
+    id('supplyModalBody').innerHTML = `<div class="supply-no-excel"><span style="font-size:2rem">⚠️</span><p>Failed to load Excel: ${esc(e.message)}</p></div>`;
+    id('supplyModalFooter').innerHTML = `<button class="btn btn-outline" onclick="closeSupplyModal()">Close</button>`;
+  }
+}
+
+function renderSupplyTable(wo, supplyType, parts) {
+  const showShort  = supplyType === 'SHORT'  || supplyType === 'BOTH';
+  const showExceed = supplyType === 'EXCEED' || supplyType === 'BOTH';
+
+  const colsHead = `
+    <th style="width:36px"><input type="checkbox" id="supplySelectAll" title="Select all"></th>
+    <th>WO</th><th>PO No.</th><th>SR No.</th><th>Part No.</th>
+    <th>PO Qty<br><small style="color:var(--text3);font-weight:400">(manual)</small></th>
+    <th>Inv Qty<br><small style="color:var(--text3);font-weight:400">(from sheet)</small></th>
+    <th>Desp Qty<br><small style="color:var(--text3);font-weight:400">(actual sent)</small></th>
+    ${showShort  ? `<th style="background:rgba(251,191,36,.18)">Short Qty<br><small style="color:var(--amber);font-weight:400">(to send later)</small></th>` : ''}
+    ${showExceed ? `<th style="background:rgba(34,197,94,.12)">Exceed Qty<br><small style="color:var(--green);font-weight:400">(sent extra)</small></th>` : ''}
+  `;
+
+  const rows = parts.map((p, i) => `
+    <tr id="supply-row-${i}">
+      <td style="text-align:center"><input type="checkbox" class="supply-row-chk" data-idx="${i}"></td>
+      <td><input class="supply-cell" data-idx="${i}" data-field="woNum" value="${esc(wo.woNumber)}" readonly style="background:var(--surface2);color:var(--text3);width:80px"></td>
+      <td><input class="supply-cell" data-idx="${i}" data-field="poNo" value="${esc(p.poNo||'')}" style="width:90px"></td>
+      <td><input class="supply-cell" data-idx="${i}" data-field="srNo" value="${esc(p.poSrNo||'')}" style="width:60px"></td>
+      <td><input class="supply-cell" data-idx="${i}" data-field="partNo" value="${esc(p.partNo||'')}" style="width:130px;font-family:monospace;font-size:.78rem"></td>
+      <td><input class="supply-cell supply-num" data-idx="${i}" data-field="poQty" value="" placeholder="—" style="width:60px"></td>
+      <td><input class="supply-cell supply-num" data-idx="${i}" data-field="invQty" value="${p.qty||0}" style="width:60px;background:var(--surface2);color:var(--text3)" readonly></td>
+      <td><input class="supply-cell supply-num" data-idx="${i}" data-field="actualDespQty" value="${p.qty||0}" placeholder="${p.qty||0}" style="width:70px"></td>
+      ${showShort  ? `<td style="background:rgba(251,191,36,.10)"><input class="supply-cell supply-num" data-idx="${i}" data-field="shortQty" value="0" style="width:70px;font-weight:600;color:var(--amber)"></td>` : ''}
+      ${showExceed ? `<td style="background:rgba(34,197,94,.08)"><input class="supply-cell supply-num" data-idx="${i}" data-field="exceedQty" value="0" style="width:70px;font-weight:600;color:var(--green)"></td>` : ''}
+    </tr>
+  `).join('');
+
+  id('supplyModalBody').innerHTML = `
+    <div style="padding:12px 16px 6px;border-bottom:1px solid var(--border)">
+      <p style="color:var(--text2);font-size:.85rem;margin:0">
+        Select the rows that have supply discrepancies. Fill in quantities for selected rows.<br>
+        <strong style="color:var(--amber)">Tip:</strong> Actual Desp Qty = what you actually packed and sent.
+      </p>
+    </div>
+    <div style="overflow:auto;max-height:60vh">
+      <table class="supply-table">
+        <thead><tr>${colsHead}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+
+  id('supplyModalFooter').innerHTML = `
+    <span style="color:var(--text3);font-size:.82rem" id="supplySelCount">0 row(s) selected</span>
+    <div style="display:flex;gap:8px;margin-left:auto">
+      <button class="btn btn-outline" onclick="closeSupplyModal()">Cancel</button>
+      <button class="btn btn-success" id="supplySubmitBtn">💾 Save &amp; Mark Ready For Dispatch</button>
+    </div>
+  `;
+
+  // Select All
+  id('supplySelectAll')?.addEventListener('change', function() {
+    document.querySelectorAll('.supply-row-chk').forEach(c => c.checked = this.checked);
+    updateSupplySelCount();
+  });
+  document.querySelectorAll('.supply-row-chk').forEach(c => c.addEventListener('change', updateSupplySelCount));
+
+  // Live cell editing stored in _supplyParsedParts
+  id('supplyModalBody').addEventListener('input', e => {
+    const el = e.target;
+    if (!el.classList.contains('supply-cell')) return;
+    const idx   = parseInt(el.dataset.idx, 10);
+    const field = el.dataset.field;
+    if (Number.isInteger(idx) && field) {
+      _supplyParsedParts[idx] = _supplyParsedParts[idx] || {};
+      _supplyParsedParts[idx][field] = el.value;
+    }
+  });
+
+  id('supplySubmitBtn')?.addEventListener('click', () => submitSupplyEntries(wo, supplyType));
+}
+
+function updateSupplySelCount() {
+  const n = document.querySelectorAll('.supply-row-chk:checked').length;
+  const el = id('supplySelCount');
+  if (el) el.textContent = `${n} row(s) selected`;
+}
+
+async function submitSupplyEntries(wo, supplyType) {
+  const selected = [...document.querySelectorAll('.supply-row-chk:checked')];
+  if (!selected.length) { showToast('Please select at least one row', 'error'); return; }
+
+  const parts = selected.map(chk => {
+    const idx = parseInt(chk.dataset.idx, 10);
+    const row = id(`supply-row-${idx}`);
+    const cell = f => row?.querySelector(`[data-field="${f}"]`)?.value ?? '';
+    return {
+      partNo:        cell('partNo'),
+      poNo:          cell('poNo'),
+      srNo:          cell('srNo'),
+      invQty:        parseInt(cell('invQty'), 10)        || 0,
+      poQty:         parseInt(cell('poQty'), 10)         || 0,
+      actualDespQty: parseInt(cell('actualDespQty'), 10) || 0,
+      shortQty:      parseInt(cell('shortQty'), 10)      || 0,
+      exceedQty:     parseInt(cell('exceedQty'), 10)     || 0,
+    };
+  });
+
+  const btn = id('supplySubmitBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    await api(`/api/supply/${wo.id}`, 'POST', { supplyType, parts });
+    closeSupplyModal();
+    showToast('Supply entries saved & Ready For Dispatch marked!', 'success');
+    // Refresh DL detail
+    const res = await api(`/api/workorders/${wo.id}`);
+    State.currentWo = res.data;
+    renderWoDetail(res.data);
+    triggerImmediateSync();
+    // Refresh cart badge
+    refreshCartBadge();
+  } catch(e) {
+    showToast(e.message || 'Failed to save', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Save & Mark Ready For Dispatch'; }
+  }
+}
+
+function closeSupplyModal() {
+  id('supplyModal').style.display = 'none';
+  _supplyWo = null; _supplyType = null; _supplyParsedParts = [];
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// REMARK — display in DL detail
+// ═══════════════════════════════════════════════════════════════════
+
+function renderRemarkSection(wo, role) {
+  const r = wo.dlRemark;
+  const hasRemark = r && r.remark && r.remark.trim();
+  const canEdit   = role === 'GENERAL_MANAGER' || role === 'STORE';
+
+  if (!hasRemark && !canEdit) return '';
+
+  return `
+    <div class="detail-remark-section ${hasRemark ? 'has-remark' : ''}">
+      <div class="detail-remark-header">
+        <span>📌 Manager Remark</span>
+        ${canEdit ? `<button class="btn btn-outline btn-xs" id="editRemarkBtn">${hasRemark ? '✏ Edit Remark' : '＋ Add Remark'}</button>` : ''}
+      </div>
+      ${hasRemark
+        ? `<div class="detail-remark-text">${esc(r.remark)}</div>
+           <div class="detail-remark-meta">By ${esc(r.updatedBy||'—')} · ${formatDate(r.updatedAt)}</div>`
+        : `<div class="detail-remark-empty">No remark added yet.</div>`}
+    </div>
+  `;
+}
+
+function renderSupplyEntriesSection(wo, role) {
+  if (!wo.supplyEntries || !wo.supplyEntries.length) return '';
+  const canResolve = role === 'STORE' || role === 'GENERAL_MANAGER';
+  const pending = wo.supplyEntries.filter(e => !e.resolved);
+  const resolved = wo.supplyEntries.filter(e => e.resolved);
+
+  const entryRows = (entries, showResolve) => entries.map(e => `
+    <div class="supply-entry-row ${e.resolved ? 'resolved' : ''}">
+      <div class="supply-entry-info">
+        <span class="supply-entry-part">${esc(e.partNo||'—')}</span>
+        <span class="supply-entry-meta">PO: ${esc(e.poNo||'—')} · SR: ${esc(e.srNo||'—')}</span>
+        <span class="supply-entry-qtys">
+          Inv: <b>${e.invQty??'—'}</b> · Sent: <b>${e.actualDespQty??'—'}</b>
+          ${e.shortQty  > 0 ? `· <span style="color:var(--amber)">Short: <b>${e.shortQty}</b></span>` : ''}
+          ${e.exceedQty > 0 ? `· <span style="color:var(--green)">Exceed: <b>${e.exceedQty}</b></span>` : ''}
+        </span>
+        <span class="supply-entry-by">By ${esc(e.createdBy||'—')} · ${formatDate(e.createdAt)}</span>
+      </div>
+      ${showResolve && canResolve ? `<button class="btn btn-outline btn-xs" onclick="resolveSupplyEntry(${e.id})">✓ Done</button>` : ''}
+    </div>
+  `).join('');
+
+  return `
+    <div class="supply-entries-section">
+      <div class="supply-entries-header">
+        <span>Supply Discrepancy Entries
+          ${wo.supplyStatus !== 'NONE' ? `<span class="supply-badge supply-badge-${(wo.supplyStatus||'').toLowerCase()}">${wo.supplyStatus==='SHORT'?'⚠ Short':wo.supplyStatus==='EXCEED'?'↑ Exceed':'⚠↑ Both'}</span>` : ''}
+        </span>
+      </div>
+      ${pending.length > 0 ? `
+        <div class="supply-entries-group">
+          <div class="supply-entries-group-title">Pending (${pending.length})</div>
+          ${entryRows(pending, true)}
+        </div>` : ''}
+      ${resolved.length > 0 ? `
+        <div class="supply-entries-group" style="opacity:.6">
+          <div class="supply-entries-group-title">Resolved (${resolved.length})</div>
+          ${entryRows(resolved, false)}
+        </div>` : ''}
+    </div>
+  `;
+}
+
+async function resolveSupplyEntry(entryId) {
+  try {
+    await api(`/api/supply/entry/${entryId}/resolve`, 'PATCH');
+    showToast('Entry marked as done', 'success');
+    const res = await api(`/api/workorders/${State.currentWo.id}`);
+    State.currentWo = res.data;
+    renderWoDetail(res.data);
+    refreshCartBadge();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+// Remark editing
+function bindRemarkBtn(wo) {
+  id('editRemarkBtn')?.addEventListener('click', () => showRemarkModal(wo));
+}
+
+function showRemarkModal(wo) {
+  const current = (wo.dlRemark && wo.dlRemark.remark) ? wo.dlRemark.remark : '';
+  const history  = wo.dlRemark && wo.dlRemark.history ? wo.dlRemark.history : [];
+  const histHtml = history.length
+    ? `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:.78rem;font-weight:600;color:var(--text2);margin-bottom:8px">Previous Remarks</div>
+        ${history.map(h => `<div class="remark-history-item"><div class="remark-history-text">${esc(h.remark||'')}</div><div class="remark-history-meta">By ${esc(h.changedBy||'—')} · ${formatDate(h.changedAt)}</div></div>`).join('')}
+       </div>` : '';
+
+  showModal('Edit Manager Remark',
+    `<div class="field-group">
+       <label>Remark <small style="color:var(--text3)">(visible to everyone in orange)</small></label>
+       <textarea id="remarkText" rows="4" placeholder="Add a remark for this dispatch…" style="width:100%">${esc(current)}</textarea>
+     </div>
+     ${histHtml}
+     <div id="remarkAlert" class="alert" style="display:none;margin-top:8px"></div>`,
+    [
+      { label: 'Save Remark', cls: 'btn-primary', id: 'saveRemarkBtn' },
+      { label: 'Cancel', cls: 'btn-outline', close: true }
+    ]
+  );
+  id('saveRemarkBtn')?.addEventListener('click', async () => {
+    const val = id('remarkText')?.value?.trim() ?? '';
+    const btn = id('saveRemarkBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await api(`/api/remarks/${wo.id}`, 'PUT', { remark: val });
+      closeModal();
+      showToast('Remark saved', 'success');
+      const res = await api(`/api/workorders/${wo.id}`);
+      State.currentWo = res.data;
+      renderWoDetail(res.data);
+    } catch(e) {
+      const a = id('remarkAlert');
+      if (a) { a.textContent = e.message; a.style.display = 'block'; }
+    } finally { btn.disabled = false; btn.textContent = 'Save Remark'; }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STORE CART PAGE
+// ═══════════════════════════════════════════════════════════════════
+
+let _cartTab = 'all';
+let _cartData = [];
+
+async function loadStoreCart() {
+  const el = id('cartContent');
+  if (el) el.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text3)">Loading…</div>`;
+
+  // Bind tab buttons
+  document.querySelectorAll('.cart-tab').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.cart-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _cartTab = btn.dataset.ctab;
+      renderCartContent(_cartData, _cartTab);
+    };
+  });
+  id('cartRefreshBtn')?.addEventListener('click', loadStoreCart);
+
+  try {
+    const res = await api('/api/supply/cart');
+    _cartData = res.data || [];
+    renderCartContent(_cartData, _cartTab);
+    refreshCartBadge(_cartData.length);
+  } catch(e) {
+    if (el) el.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger)">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderCartContent(data, tab) {
+  const el = id('cartContent');
+  if (!el) return;
+
+  let filtered = data;
+  if (tab === 'short')  filtered = data.filter(d => d.supplyStatus === 'SHORT' || d.supplyStatus === 'BOTH');
+  if (tab === 'exceed') filtered = data.filter(d => d.supplyStatus === 'EXCEED' || d.supplyStatus === 'BOTH');
+
+  if (!filtered.length) {
+    el.innerHTML = `<div class="cart-empty">
+      <div style="font-size:2.5rem">🛒</div>
+      <div style="font-weight:600;font-size:1.05rem;margin-top:12px">Cart is empty</div>
+      <div style="color:var(--text3);font-size:.9rem;margin-top:6px">No pending supply discrepancies for this filter.</div>
+    </div>`;
+    return;
+  }
+
+  const role = State.user?.role;
+  const canAct = role === 'STORE' || role === 'GENERAL_MANAGER';
+
+  el.innerHTML = filtered.map(d => {
+    const ss = d.supplyStatus;
+    const entries = d.entries || [];
+    const hasShort  = entries.some(e => e.shortQty  > 0);
+    const hasExceed = entries.some(e => e.exceedQty > 0);
+
+    const entryRows = entries.map(e => `
+      <tr class="cart-entry-row">
+        <td style="font-family:monospace;font-size:.78rem">${esc(e.partNo||'—')}</td>
+        <td>${esc(e.poNo||'—')}</td>
+        <td>${esc(e.srNo||'—')}</td>
+        <td style="text-align:right">${e.invQty??'—'}</td>
+        <td style="text-align:right">${e.poQty||'—'}</td>
+        <td style="text-align:right">${e.actualDespQty??'—'}</td>
+        ${hasShort  ? `<td style="text-align:right;color:var(--amber);font-weight:600">${e.shortQty  > 0 ? e.shortQty  : '—'}</td>` : ''}
+        ${hasExceed ? `<td style="text-align:right;color:var(--green);font-weight:600">${e.exceedQty > 0 ? e.exceedQty : '—'}</td>` : ''}
+        <td style="text-align:center">
+          ${canAct ? `<button class="btn btn-outline btn-xs" onclick="resolveCartEntry(${e.id}, this)">✓ Done</button>` : '—'}
+        </td>
+      </tr>
+    `).join('');
+
+    return `
+      <div class="cart-card supply-card-orange" id="cartCard-${d.id}">
+        <div class="cart-card-header" onclick="toggleCartCard(${d.id})">
+          <div class="cart-card-title">
+            <span class="cart-wo-num">${esc(d.woNumber)}</span>
+            <span class="cart-customer">${esc(d.customerName)}</span>
+            <span class="supply-badge supply-badge-${(ss||'').toLowerCase()}">${ss==='SHORT'?'⚠ Short':ss==='EXCEED'?'↑ Exceed':'⚠↑ Both'}</span>
+          </div>
+          <div class="cart-card-meta">
+            <span>${esc(d.shipmentMode||'')}</span>
+            <span class="cart-count-badge">${d.pendingCount} item${d.pendingCount!==1?'s':''}</span>
+            <span class="cart-expand-icon" id="cartChevron-${d.id}">▼</span>
+          </div>
+        </div>
+        <div class="cart-card-body" id="cartBody-${d.id}" style="display:none">
+          <div class="cart-entry-btns">
+            <button class="btn btn-outline btn-xs" onclick="openWoDetail(${d.id})">👁 Open DL</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="supply-table cart-table">
+              <thead><tr>
+                <th>Part No.</th><th>PO No.</th><th>SR No.</th>
+                <th>Inv Qty</th><th>PO Qty</th><th>Desp Qty</th>
+                ${hasShort  ? `<th style="color:var(--amber)">Short Qty</th>` : ''}
+                ${hasExceed ? `<th style="color:var(--green)">Exceed Qty</th>` : ''}
+                <th>Action</th>
+              </tr></thead>
+              <tbody>${entryRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleCartCard(id_) {
+  const body = id(`cartBody-${id_}`);
+  const icon = id(`cartChevron-${id_}`);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (icon) icon.textContent = open ? '▼' : '▲';
+}
+
+async function resolveCartEntry(entryId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    await api(`/api/supply/entry/${entryId}/resolve`, 'PATCH');
+    showToast('Entry marked done', 'success');
+    await loadStoreCart();
+  } catch(e) {
+    showToast(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Done'; }
+  }
+}
+
+async function refreshCartBadge(count) {
+  const badge = id('cartBadge');
+  if (!badge) return;
+  if (count === undefined) {
+    try {
+      const res = await api('/api/supply/cart');
+      count = (res.data || []).length;
+    } catch(_) { return; }
+  }
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
