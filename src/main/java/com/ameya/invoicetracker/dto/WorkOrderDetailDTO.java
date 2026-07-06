@@ -63,6 +63,13 @@ public class WorkOrderDetailDTO {
     private LocalDateTime updatedAt;
     private String createdBy;
 
+    // Supply discrepancy
+    private String supplyStatus;               // NONE / SHORT / EXCEED / BOTH
+    private List<SupplyEntryDTO> supplyEntries; // all entries (including resolved)
+
+    // DL remark
+    private DlRemarkDTO dlRemark;
+
     private List<FileDTO> excelFiles;
     private List<FileDTO> pdfFiles;
     private List<FileDTO> packingFiles;

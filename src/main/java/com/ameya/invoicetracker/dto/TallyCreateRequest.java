@@ -28,4 +28,6 @@ public class TallyCreateRequest {
     private String boxType;
     // Folders
     private String mainInvoiceFolder;
+    // Tally server override, e.g. "192.168.151.2:9000" (blank = use configured default)
+    private String tallyServer;
 }

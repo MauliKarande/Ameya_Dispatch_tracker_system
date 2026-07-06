@@ -950,3 +950,181 @@ height: 100px;
 
 /* ── Bold invoice numbers everywhere ───────────────────────── */
 .invoice-num-bold { font-weight:700; }
+
+/* ═══════════════════════════════════════════════════════════════
+   SUPPLY DISCREPANCY — row/card highlights, badges, modal
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Table row orange tint */
+.supply-row-orange { background: rgba(251,146,60,.22) !important; }
+.supply-row-orange:hover { background: rgba(251,146,60,.32) !important; }
+
+/* Card orange tint */
+.supply-card-orange {
+  border-left: 4px solid #ea6c00 !important;
+  background: rgba(234,108,0,.22);
+  box-shadow: 0 0 0 1px rgba(234,108,0,.25);
+}
+
+/* Supply status badges */
+.supply-badge {
+  display:inline-flex; align-items:center; gap:3px;
+  padding:2px 7px; border-radius:20px;
+  font-size:.7rem; font-weight:700; white-space:nowrap;
+}
+.supply-badge-short  { background:#fef3c7; color:#92400e; }
+.supply-badge-exceed { background:#dcfce7; color:#14532d; }
+.supply-badge-both   { background:#fff7ed; color:#9a3412; }
+
+/* Cart nav badge */
+.cart-nav-badge {
+  display:inline-flex; align-items:center; justify-content:center;
+  background:#f97316; color:#fff;
+  font-size:.62rem; font-weight:700;
+  border-radius:10px; min-width:16px; height:16px;
+  padding:0 4px; margin-left:4px;
+}
+
+/* RFD 4-option grid */
+.rfd-option-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:4px 0;
+}
+.rfd-option-btn {
+  display:flex; flex-direction:column; align-items:flex-start; gap:4px;
+  padding:14px 16px; border-radius:10px; border:2px solid var(--border);
+  background:var(--surface2); cursor:pointer; text-align:left;
+  transition:border-color .18s, background .18s;
+}
+.rfd-option-btn:hover { border-color:var(--blue-600); background:var(--blue-50); }
+.rfd-done:hover   { border-color:var(--green); background:var(--green-bg); }
+.rfd-short:hover  { border-color:var(--amber); background:#fef3c7; }
+.rfd-exceed:hover { border-color:var(--green); background:#dcfce7; }
+.rfd-both:hover   { border-color:#f97316; background:#fff7ed; }
+.rfd-opt-icon  { font-size:1.5rem; }
+.rfd-opt-title { font-weight:700; font-size:.9rem; color:var(--text); }
+.rfd-opt-sub   { font-size:.78rem; color:var(--text3); line-height:1.4; }
+
+/* Supply modal */
+.supply-modal-box {
+  max-width:96vw; width:1200px; max-height:94vh;
+  display:flex; flex-direction:column;
+}
+.supply-no-excel {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:60px; gap:12px; color:var(--text2);
+}
+
+/* Supply table in modal */
+.supply-table {
+  width:100%; border-collapse:collapse; font-size:.8rem;
+}
+.supply-table th {
+  background:var(--surface2); color:var(--text2); font-weight:600;
+  padding:6px 8px; border-bottom:2px solid var(--border);
+  white-space:nowrap; text-align:left;
+}
+.supply-table td { padding:4px 6px; border-bottom:1px solid var(--border); vertical-align:middle; }
+.supply-table tbody tr:hover { background:var(--blue-50); }
+.supply-cell {
+  border:1px solid var(--border); border-radius:4px;
+  padding:3px 5px; background:var(--surface); color:var(--text);
+  font-size:.78rem; outline:none;
+}
+.supply-cell:focus { border-color:var(--blue-600); box-shadow:0 0 0 2px rgba(37,99,235,.15); }
+.supply-num { text-align:right; }
+
+/* Remark section in DL detail */
+.detail-remark-section {
+  margin: 16px 0; border-radius:10px;
+  border:1.5px solid var(--border); background:var(--surface);
+  padding:14px 18px;
+}
+.detail-remark-section.has-remark {
+  border-color:#f97316; background:rgba(251,146,60,.06);
+}
+.detail-remark-header {
+  display:flex; align-items:center; justify-content:space-between;
+  font-weight:700; font-size:.88rem; color:var(--text);
+  margin-bottom:8px;
+}
+.detail-remark-text {
+  color:#c2410c; font-weight:600; font-size:.9rem;
+  white-space:pre-wrap; word-wrap:break-word; line-height:1.6;
+}
+.detail-remark-meta { font-size:.75rem; color:var(--text3); margin-top:6px; }
+.detail-remark-empty { color:var(--text3); font-size:.85rem; }
+.remark-history-item { margin-bottom:8px; padding:8px; background:var(--surface2); border-radius:6px; }
+.remark-history-text { font-size:.82rem; color:var(--text); white-space:pre-wrap; }
+.remark-history-meta { font-size:.72rem; color:var(--text3); margin-top:4px; }
+
+/* Supply entries in DL detail */
+.supply-entries-section {
+  margin:16px 0; border-radius:10px;
+  border:1.5px solid #f97316; background:rgba(251,146,60,.05);
+  padding:14px 18px;
+}
+.supply-entries-header {
+  font-weight:700; font-size:.88rem; color:var(--text);
+  display:flex; align-items:center; gap:8px; margin-bottom:10px;
+}
+.supply-entries-group { margin-bottom:12px; }
+.supply-entries-group-title {
+  font-size:.75rem; font-weight:700; color:var(--text3);
+  text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px;
+}
+.supply-entry-row {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:8px 12px; border-radius:8px; background:var(--surface);
+  border:1px solid var(--border); margin-bottom:6px;
+}
+.supply-entry-row.resolved { opacity:.5; }
+.supply-entry-info { display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
+.supply-entry-part { font-family:monospace; font-weight:700; font-size:.82rem; }
+.supply-entry-meta { font-size:.75rem; color:var(--text3); }
+.supply-entry-qtys { font-size:.8rem; color:var(--text2); }
+.supply-entry-by   { font-size:.72rem; color:var(--text3); }
+
+/* Store Cart page */
+.cart-tabs {
+  display:flex; gap:4px; padding:0 0 12px;
+  border-bottom:1px solid var(--border); margin-bottom:16px;
+}
+.cart-tab {
+  padding:7px 18px; border-radius:20px; border:1.5px solid var(--border);
+  background:var(--surface2); color:var(--text2); font-weight:600; font-size:.83rem;
+  cursor:pointer; transition:all .18s;
+}
+.cart-tab.active { background:var(--blue-600); color:#fff; border-color:var(--blue-600); }
+.cart-tab:hover:not(.active) { background:var(--blue-50); border-color:var(--blue-600); color:var(--blue-600); }
+
+.cart-content { display:flex; flex-direction:column; gap:14px; }
+.cart-empty {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:80px 40px; color:var(--text2);
+}
+
+.cart-card {
+  border-radius:12px; border:1.5px solid var(--border);
+  background:var(--surface); overflow:hidden;
+  box-shadow:var(--shadow);
+}
+.cart-card-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 18px; cursor:pointer; gap:12px;
+  transition:background .15s;
+}
+.cart-card-header:hover { background:var(--surface2); }
+.cart-card-title { display:flex; align-items:center; gap:10px; flex:1; min-width:0; }
+.cart-wo-num { font-weight:700; font-size:.95rem; font-family:monospace; color:var(--blue-600); }
+.cart-customer { font-size:.88rem; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px; }
+.cart-card-meta { display:flex; align-items:center; gap:10px; color:var(--text3); font-size:.8rem; flex-shrink:0; }
+.cart-count-badge {
+  padding:2px 9px; border-radius:20px;
+  background:#fff7ed; color:#c2410c; font-weight:700; font-size:.75rem;
+}
+.cart-expand-icon { font-size:.8rem; transition:transform .2s; }
+.cart-card-body { padding:0 18px 14px; border-top:1px solid var(--border); }
+.cart-entry-btns { padding:10px 0 8px; display:flex; gap:8px; }
+.cart-table { margin-top:6px; }
+.cart-table td { padding:5px 8px; }
+

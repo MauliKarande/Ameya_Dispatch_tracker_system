@@ -39,10 +39,11 @@ public class SalesExecController {
 
         List<WorkOrderSummaryDTO> result = workOrderRepository.findAllByOrderByCreatedAtDesc()
             .stream()
-            .filter(wo -> wo.getStockStatus()            == WorkOrder.StepStatus.DONE
-                       && wo.getPackagingStatus()         == WorkOrder.StepStatus.DONE
-                       && wo.getInvoiceStatus()           == WorkOrder.StepStatus.DONE
-                       && wo.getReadyForDispatchStatus()  == WorkOrder.StepStatus.DONE
+            .filter(wo -> wo.getStockStatus()    == WorkOrder.StepStatus.DONE
+                       && wo.getPackagingStatus() == WorkOrder.StepStatus.DONE
+                       && wo.getInvoiceStatus()   == WorkOrder.StepStatus.DONE
+                       && (wo.getReadyForDispatchStatus() == WorkOrder.StepStatus.DONE
+                           || (wo.getSupplyStatus() != null && wo.getSupplyStatus() != WorkOrder.SupplyStatus.NONE))
                        && !documented.contains(wo.getId()))
             .map(wo -> workOrderService.getSummaryById(wo.getId()))
             .collect(Collectors.toList());

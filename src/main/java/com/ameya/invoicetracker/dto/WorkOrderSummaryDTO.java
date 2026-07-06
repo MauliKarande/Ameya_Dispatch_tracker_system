@@ -26,6 +26,9 @@ public class WorkOrderSummaryDTO {
     private LocalDateTime collectionUpdatedAt;
     private boolean hasNote;
     private boolean hasInvoiceIssue;
+    private String supplyStatus;   // NONE / SHORT / EXCEED / BOTH
+    private boolean hasRemark;
+    private String dlRemark;       // current remark text (for list display)
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String createdBy;

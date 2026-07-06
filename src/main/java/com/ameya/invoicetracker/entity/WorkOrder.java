@@ -150,11 +150,19 @@ public class WorkOrder {
         if (packingDetailsStatus == null) packingDetailsStatus = StepStatus.PENDING;
         if (readyForDispatchStatus == null) readyForDispatchStatus = StepStatus.PENDING;
         if (collectionStatus == null) collectionStatus = StepStatus.PENDING;
+        if (supplyStatus == null) supplyStatus = SupplyStatus.NONE;
     }
 
     @PreUpdate
     protected void onUpdate() { updatedAt = LocalDateTime.now(); }
 
+    // Supply discrepancy tracking
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    @Builder.Default
+    private SupplyStatus supplyStatus = SupplyStatus.NONE;
+
     public enum WoStatus    { IN_PROGRESS, COMPLETED, REVISED }
     public enum StepStatus  { PENDING, DONE }
+    public enum SupplyStatus { NONE, SHORT, EXCEED, BOTH }
 }

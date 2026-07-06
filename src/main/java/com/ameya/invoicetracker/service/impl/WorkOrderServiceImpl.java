@@ -5,6 +5,8 @@ import com.ameya.invoicetracker.entity.*;
 import com.ameya.invoicetracker.exception.*;
 import com.ameya.invoicetracker.repository.*;
 import com.ameya.invoicetracker.controller.NotificationController;
+import com.ameya.invoicetracker.service.DlRemarkService;
+import com.ameya.invoicetracker.service.SupplyService;
 import com.ameya.invoicetracker.service.WorkOrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,8 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     private final FileStorageRepository fileStorageRepository;
     private final ActivityLogRepository activityLogRepository;
     private final UserRepository userRepository;
+    private final SupplyEntryRepository supplyEntryRepository;
+    private final DlRemarkRepository dlRemarkRepository;
 
     @Value("${app.upload.excel-dir}") private String excelUploadDir;
     @Value("${app.upload.pdf-dir}")   private String pdfUploadDir;
@@ -481,6 +485,9 @@ public class WorkOrderServiceImpl implements WorkOrderService {
             .collectionUpdatedAt(wo.getCollectionUpdatedAt())
             .hasNote(wo.getNoteForInvoice() != null && !wo.getNoteForInvoice().isBlank())
             .hasInvoiceIssue(wo.getInvoiceIssue() != null && !wo.getInvoiceIssue().isBlank())
+            .supplyStatus(wo.getSupplyStatus() != null ? wo.getSupplyStatus().name() : "NONE")
+            .hasRemark(dlRemarkRepository.findByWorkOrderId(wo.getId()).map(r -> r.getRemark() != null && !r.getRemark().isBlank()).orElse(false))
+            .dlRemark(dlRemarkRepository.findByWorkOrderId(wo.getId()).map(r -> r.getRemark()).orElse(null))
             .createdAt(wo.getCreatedAt()).updatedAt(wo.getUpdatedAt()).createdBy(wo.getCreatedBy())
             .latestExcelFileId(excel.map(FileStorage::getId).orElse(null))
             .latestExcelFileName(excel.map(FileStorage::getOriginalFileName).orElse(null))
@@ -504,6 +511,18 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         List<ActivityLogDTO> logs = activityLogRepository
             .findByWorkOrderIdOrderByTimestampDesc(wo.getId())
             .stream().map(this::toLogDTO).collect(Collectors.toList());
+        List<SupplyEntryDTO> supplyEntries = supplyEntryRepository
+            .findByWorkOrderIdOrderByCreatedAtDesc(wo.getId())
+            .stream().map(e -> SupplyEntryDTO.builder()
+                .id(e.getId()).partNo(e.getPartNo()).poNo(e.getPoNo()).srNo(e.getSrNo())
+                .invQty(e.getInvQty()).poQty(e.getPoQty()).actualDespQty(e.getActualDespQty())
+                .shortQty(e.getShortQty()).exceedQty(e.getExceedQty())
+                .resolved(e.isResolved()).createdAt(e.getCreatedAt()).createdBy(e.getCreatedBy())
+                .build()).collect(Collectors.toList());
+        var remarkOpt = dlRemarkRepository.findByWorkOrderId(wo.getId());
+        DlRemarkDTO remarkDTO = remarkOpt.map(r -> DlRemarkDTO.builder()
+            .remark(r.getRemark()).updatedAt(r.getUpdatedAt()).updatedBy(r.getUpdatedBy())
+            .history(List.of()).build()).orElse(null);
         return WorkOrderDetailDTO.builder()
             .id(wo.getId()).woNumber(wo.getWoNumber()).customerName(wo.getCustomerName())
             .shipmentMode(wo.getShipmentMode()).invoiceType(wo.getInvoiceType())
@@ -525,6 +544,9 @@ public class WorkOrderServiceImpl implements WorkOrderService {
             .collectionStatus(wo.getCollectionStatus().name())
             .collectionUpdatedAt(wo.getCollectionUpdatedAt()).collectionUpdatedBy(wo.getCollectionUpdatedBy())
             .noteForInvoice(wo.getNoteForInvoice()).noteUpdatedAt(wo.getNoteUpdatedAt()).noteUpdatedBy(wo.getNoteUpdatedBy())
+            .supplyStatus(wo.getSupplyStatus() != null ? wo.getSupplyStatus().name() : "NONE")
+            .supplyEntries(supplyEntries)
+            .dlRemark(remarkDTO)
             .createdAt(wo.getCreatedAt()).updatedAt(wo.getUpdatedAt()).createdBy(wo.getCreatedBy())
             .excelFiles(excelFiles).pdfFiles(pdfFiles).packingFiles(packingFiles).activityLogs(logs)
             .build();

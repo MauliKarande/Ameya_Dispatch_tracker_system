@@ -33,6 +33,13 @@ public class TallyInvoiceService {
 
     private final TallyCustomDataService customData;
 
+    // ── Resolve effective Tally URL (per-request override or configured default) ──
+    private String resolveTallyUrl(String override) {
+        if (override == null || override.isBlank()) return tallyUrl;
+        String addr = override.strip();
+        return addr.matches("(?i)^https?://.*") ? addr : "http://" + addr;
+    }
+
     // ── Send XML to Tally ─────────────────────────────────────────────────
     public String sendToTally(TallyCreateRequest req) {
         List<TallyPartDTO> parts = req.getParts();
@@ -43,13 +50,14 @@ public class TallyInvoiceService {
         String mailingName = addr != null ? (String) addr.getOrDefault("mailing_name", req.getPartyTally()) : req.getPartyTally();
 
         String xml = buildXml(parts, req, addrLines, mailingName);
-        log.info("Sending invoice XML to Tally for party={} voucher={}", req.getPartyTally(), req.getVoucherNumber());
+        String url = resolveTallyUrl(req.getTallyServer());
+        log.info("Sending invoice XML to Tally at {} for party={} voucher={}", url, req.getPartyTally(), req.getVoucherNumber());
 
         try {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(15)).build();
             HttpRequest httpReq = HttpRequest.newBuilder()
-                    .uri(URI.create(tallyUrl))
+                    .uri(URI.create(url))
                     .header("Content-Type", "application/xml")
                     .POST(HttpRequest.BodyPublishers.ofString(xml, StandardCharsets.UTF_8))
                     .timeout(Duration.ofSeconds(30)).build();
@@ -68,13 +76,14 @@ public class TallyInvoiceService {
     }
 
     // ── Ping Tally server ─────────────────────────────────────────────────
-    public Map<String, String> pingTally() {
+    public Map<String, String> pingTally(String tallyServerOverride) {
+        String url = resolveTallyUrl(tallyServerOverride);
         Map<String, String> result = new LinkedHashMap<>();
         try {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(5)).build();
             HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(tallyUrl))
+                    .uri(URI.create(url))
                     .GET()
                     .timeout(Duration.ofSeconds(5)).build();
             client.send(req, HttpResponse.BodyHandlers.ofString());
@@ -93,7 +102,8 @@ public class TallyInvoiceService {
      * (check_part_availability_odbc) without needing a JDBC-ODBC bridge.
      * Per-part queries are fast and do NOT hang Tally like a bulk "List of Accounts" dump.
      */
-    public Map<String, Object> checkPartsInTally(List<String> partNumbers) {
+    public Map<String, Object> checkPartsInTally(List<String> partNumbers, String tallyServerOverride) {
+        String url = resolveTallyUrl(tallyServerOverride);
         List<Map<String, String>> results = new ArrayList<>();
         List<String> found    = new ArrayList<>();
         List<String> notFound = new ArrayList<>();
@@ -121,7 +131,7 @@ public class TallyInvoiceService {
                         </ENVELOPE>""", escXml(companyName), escXml(partNo));
 
                 HttpRequest httpReq = HttpRequest.newBuilder()
-                        .uri(URI.create(tallyUrl))
+                        .uri(URI.create(url))
                         .header("Content-Type", "application/xml")
                         .POST(HttpRequest.BodyPublishers.ofString(xml, StandardCharsets.UTF_8))
                         .timeout(Duration.ofSeconds(15)).build();

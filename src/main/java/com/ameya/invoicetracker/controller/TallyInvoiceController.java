@@ -9,6 +9,7 @@ import com.ameya.invoicetracker.repository.WorkOrderRepository;
 import com.ameya.invoicetracker.service.ExcelParserService;
 import com.ameya.invoicetracker.service.TallyCustomDataService;
 import com.ameya.invoicetracker.service.TallyInvoiceService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -176,13 +177,15 @@ public class TallyInvoiceController {
      * Queries Tally HTTP server for all stock items and returns which parts exist.
      */
     @PostMapping("/check-parts")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> checkParts(@RequestBody Map<String, List<String>> body) {
-        List<String> parts = body.get("parts");
+    public ResponseEntity<ApiResponse<Map<String, Object>>> checkParts(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> parts = (List<String>) body.get("parts");
         if (parts == null || parts.isEmpty()) {
             return ResponseEntity.badRequest().body(ApiResponse.error("No parts provided"));
         }
+        String tallyServer = (String) body.get("tallyServer");
         try {
-            Map<String, Object> result = tallyService.checkPartsInTally(parts);
+            Map<String, Object> result = tallyService.checkPartsInTally(parts, tallyServer);
             return ResponseEntity.ok(ApiResponse.ok(result));
         } catch (Exception e) {
             return ResponseEntity.status(503).body(ApiResponse.error(e.getMessage()));
@@ -228,11 +231,31 @@ public class TallyInvoiceController {
 
     /**
      * GET /api/tally/ping
-     * Checks if the Tally HTTP server is reachable on localhost:9000.
+     * Checks if the Tally HTTP server is reachable (optionally at a caller-supplied address).
      */
     @GetMapping("/ping")
-    public ResponseEntity<ApiResponse<Map<String, String>>> ping() {
-        Map<String, String> result = tallyService.pingTally();
+    public ResponseEntity<ApiResponse<Map<String, String>>> ping(
+            @RequestParam(required = false) String tallyServer) {
+        Map<String, String> result = tallyService.pingTally(tallyServer);
+        return ResponseEntity.ok(ApiResponse.ok(result));
+    }
+
+    /**
+     * GET /api/tally/client-ip
+     * Returns the caller's LAN IP address, as seen by this server. Used by the
+     * frontend's "This Machine" option so a user's own PC can be picked as the
+     * Tally server without typing its IP manually.
+     */
+    @GetMapping("/client-ip")
+    public ResponseEntity<ApiResponse<Map<String, String>>> clientIp(HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip != null && !ip.isBlank()) {
+            ip = ip.split(",")[0].strip();
+        } else {
+            ip = request.getRemoteAddr();
+        }
+        Map<String, String> result = new HashMap<>();
+        result.put("ip", ip);
         return ResponseEntity.ok(ApiResponse.ok(result));
     }
 

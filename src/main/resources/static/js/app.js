@@ -224,10 +224,13 @@ function showApp() {
   setupNotifications();
   startAutoSync();
   setupNotificationBanner();
+  // Cart badge for all roles except ADMIN
+  const _role = State.user?.role;
+  if (_role !== 'ADMIN') refreshCartBadge();
 
   const savedPage = localStorage.getItem('lastPage');
   const savedWoId = localStorage.getItem('lastWoId');
-  const allowedPages = ['dashboard','create-wo','all-wo','rfd','detail','user-mgmt'];
+  const allowedPages = ['dashboard','create-wo','all-wo','rfd','detail','user-mgmt','store-cart'];
   let targetPage = savedPage && allowedPages.includes(savedPage) ? savedPage : null;
 
   if (State.user?.role === 'ADMIN') {
@@ -292,6 +295,7 @@ function setupUserUI() {
 
   const isGM          = u.role === 'GENERAL_MANAGER';
   const isAdmin       = u.role === 'ADMIN';
+  const isStore       = u.role === 'STORE';
   const isInvoiceCreator = u.role === 'INVOICE_CREATOR';
   const isSalesExec   = u.role === 'SALES_EXECUTIVE';
 
@@ -301,6 +305,8 @@ function setupUserUI() {
   document.querySelectorAll('.nav-only-invoice-creator').forEach(el => el.style.display = isInvoiceCreator ? '' : 'none');
   document.querySelectorAll('.nav-only-sales-exec').forEach(el => el.style.display = isSalesExec ? '' : 'none');
   document.querySelectorAll('.nav-hide-sales-exec').forEach(el => el.style.display = isSalesExec ? 'none' : '');
+  // Store Cart visible to Store + General Manager + Sales Executive
+  document.querySelectorAll('.nav-store-cart').forEach(el => el.style.display = !isAdmin ? '' : 'none');
 
   // ADMIN cannot touch dispatches — redirect to user-mgmt as home
   if (isAdmin) {
@@ -355,12 +361,13 @@ function navigateTo(page) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
   const pageMap = {
-    'dashboard':  { pageId:'pageDashboard',  title:'Dashboard' },
-    'create-wo':  { pageId:'pageCreateWo',   title:'New Dispatch' },
-    'all-wo':     { pageId:'pageAllWo',      title:'All Dispatch Lists' },
-    'rfd':        { pageId:'pageRfd',        title:'Ready for Dispatch' },
-    'detail':     { pageId:'pageWoDetail',   title:'Dispatch Detail' },
-    'user-mgmt':  { pageId:'pageUserMgmt',   title:'User Management' },
+    'dashboard':   { pageId:'pageDashboard',  title:'Dashboard' },
+    'create-wo':   { pageId:'pageCreateWo',   title:'New Dispatch' },
+    'all-wo':      { pageId:'pageAllWo',      title:'All Dispatch Lists' },
+    'rfd':         { pageId:'pageRfd',        title:'Ready for Dispatch' },
+    'detail':      { pageId:'pageWoDetail',   title:'Dispatch Detail' },
+    'user-mgmt':   { pageId:'pageUserMgmt',   title:'User Management' },
+    'store-cart':  { pageId:'pageStoreCart',  title:'Store Cart' },
   };
   const info = pageMap[page];
   if (!info) return;
@@ -379,6 +386,7 @@ function navigateTo(page) {
   if (page === 'all-wo') loadAllWo();
   if (page === 'rfd') loadRFDPage();
   if (page === 'user-mgmt') loadUserManagement();
+  if (page === 'store-cart') loadStoreCart();
 }
 
 // ── LOOKUP DATA ────────────────────────────────────────────────────
@@ -676,6 +684,7 @@ function renderWoTable(list) {
 
 function woCard(w) {
   const statusClass = w.status === 'COMPLETED' ? 'status-completed' : w.status === 'REVISED' ? 'status-revised' : '';
+  const supplyClass = (w.supplyStatus && w.supplyStatus !== 'NONE') ? ' supply-card-orange' : '';
   const steps = [
     { label: 'Stock',    status: w.stockStatus },
     { label: 'Packing',  status: w.packagingStatus },
@@ -694,7 +703,7 @@ function woCard(w) {
   const pdfBtn = w.latestPdfFileId
     ? `<a href="/api/files/view/${w.latestPdfFileId}?token=${State.token}" target="_blank" class="btn btn-outline btn-xs">↓ PDF</a>` : '';
 
-  return `<div class="wo-card ${statusClass}" data-detail="${w.id}">
+  return `<div class="wo-card ${statusClass}${supplyClass}" data-detail="${w.id}">
     <div class="wo-card-top">
       <div>
         <div class="wo-card-num">${esc(w.woNumber)}${w.revised ? ' <span style="color:var(--amber);font-size:.75rem">↻ v'+w.version+'</span>' : ''}</div>
@@ -720,8 +729,9 @@ function woRow(w) {
   const flags = `${w.hasNote ? '📝' : ''}${w.hasInvoiceIssue ? ' ⚠' : ''}`;
   const versionBadge = w.revised ? `<span class="badge badge-revised" style="font-size:.68rem">v${w.version}</span>` : `v${w.version}`;
 
-  return `<tr data-detail="${w.id}">
-    <td><span class="wo-number-link">${w.woNumber}</span>${w.revised?`<br><span style="font-size:.7rem;color:var(--amber)">↻ Revised</span>`:''}</td>
+  const supplyRowCls = (w.supplyStatus && w.supplyStatus !== 'NONE') ? ' supply-row-orange' : '';
+  return `<tr data-detail="${w.id}" class="${supplyRowCls}">
+    <td><span class="wo-number-link">${w.woNumber}</span>${w.revised?`<br><span style="font-size:.7rem;color:var(--amber)">↻ Revised</span>`:''}${w.supplyStatus&&w.supplyStatus!=='NONE'?`<br><span class="supply-badge supply-badge-${w.supplyStatus.toLowerCase()}" style="font-size:.65rem">${w.supplyStatus==='SHORT'?'⚠ Short':w.supplyStatus==='EXCEED'?'↑ Exceed':'⚠↑ Both'}</span>`:''}</td>
     <td><span style="font-size:.82rem">${esc(w.customerName)}</span><br><span style="font-size:.7rem;color:var(--text3)">${formatDate(w.woDate)}</span></td>
     <td><span style="font-size:.8rem">${esc(w.shipmentMode||'—')}</span></td>
     <td><span class="badge badge-ip" style="font-size:.72rem">${esc(w.invoiceType||'Commercial')}</span></td>
@@ -885,10 +895,17 @@ function renderRFDPendingPage() {
   const { items, safePage, totalPages, total } = paginateList(list, State.rfdPendingPage);
   State.rfdPendingPage = safePage;
 
-  id('rfdList').innerHTML = items.map(wo => `
-    <div class="rfd-card" id="rfd-card-${wo.id}">
+  id('rfdList').innerHTML = items.map(wo => {
+    const hasSupply = wo.supplyStatus && wo.supplyStatus !== 'NONE';
+    const supplyBadge = hasSupply
+      ? `<span class="supply-badge supply-badge-${wo.supplyStatus.toLowerCase()}" style="margin-left:6px">${wo.supplyStatus === 'SHORT' ? '⚠ Short' : wo.supplyStatus === 'EXCEED' ? '↑ Exceed' : '⚠↑ Both'}</span>` : '';
+    const remarkLine = hasSupply && wo.dlRemark
+      ? `<div style="font-size:.75rem;color:var(--text2);margin-top:3px;font-style:italic">💬 ${esc(wo.dlRemark)}</div>` : '';
+    return `
+    <div class="rfd-card${hasSupply ? ' supply-card-orange' : ''}" id="rfd-card-${wo.id}">
       <div class="rfd-card-info">
-        <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a></div>
+        <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a>${supplyBadge}</div>
+        ${remarkLine}
         <div class="rfd-customer">${esc(wo.customerName)}</div>
         <div class="rfd-meta">
           ${wo.invoiceNumber ? `Invoice: <strong>${esc(wo.invoiceNumber)}</strong> &nbsp;·&nbsp;` : ''}
@@ -900,7 +917,8 @@ function renderRFDPendingPage() {
         <button class="btn btn-success rfd-dispatch-btn" data-id="${wo.id}">Documentation Done</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   renderPagination('rfdPagination', safePage, totalPages, total, 'setRfdPendingPage');
 
@@ -949,10 +967,16 @@ function renderRFDDonePage() {
 
   id('rfdDoneList').innerHTML = items.map(item => {
     const wo = item.workOrder;
+    const hasSupply = wo.supplyStatus && wo.supplyStatus !== 'NONE';
+    const supplyBadge = hasSupply
+      ? `<span class="supply-badge supply-badge-${wo.supplyStatus.toLowerCase()}" style="margin-left:6px">${wo.supplyStatus === 'SHORT' ? '⚠ Short' : wo.supplyStatus === 'EXCEED' ? '↑ Exceed' : '⚠↑ Both'}</span>` : '';
+    const remarkLine = hasSupply && wo.dlRemark
+      ? `<div style="font-size:.75rem;color:var(--text2);margin-top:3px;font-style:italic">💬 ${esc(wo.dlRemark)}</div>` : '';
     return `
-      <div class="rfd-card rfd-card-done">
+      <div class="rfd-card rfd-card-done${hasSupply ? ' supply-card-orange' : ''}">
         <div class="rfd-card-info">
-          <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a></div>
+          <div class="rfd-dl-number"><a href="#" class="rfd-dl-link" data-wo-id="${wo.id}">${esc(wo.woNumber)}</a>${supplyBadge}</div>
+          ${remarkLine}
           <div class="rfd-customer">${esc(wo.customerName)}</div>
           <div class="rfd-meta">
             ${wo.invoiceNumber ? `Invoice: <strong>${esc(wo.invoiceNumber)}</strong> &nbsp;·&nbsp;` : ''}
@@ -1273,6 +1297,12 @@ function renderWoDetail(wo) {
       </div>
     </div>
 
+    <!-- DL Remark (orange, visible to all) -->
+    ${renderRemarkSection(wo, role)}
+
+    <!-- Supply Entries Summary (if any) -->
+    ${renderSupplyEntriesSection(wo, role)}
+
     <!-- Logs Button -->
     <div style="margin-top:20px;text-align:center">
       <button class="btn btn-outline" id="viewLogsBtn">📋 View Logs</button>
@@ -1370,8 +1400,13 @@ function renderRFDStep(wo, role) {
   const canToggle = role === 'STORE';
   const nextDone = (wo.collectionStatus||'PENDING') === 'DONE';
   const canRevert = canToggle && isDone && !nextDone;
+  const supplyBadge = wo.supplyStatus && wo.supplyStatus !== 'NONE'
+    ? `<span class="supply-badge supply-badge-${wo.supplyStatus.toLowerCase()}">${wo.supplyStatus === 'SHORT' ? '⚠ Short' : wo.supplyStatus === 'EXCEED' ? '↑ Exceed' : '⚠↑ Both'}</span>` : '';
   return `<div class="step-row">
-    <div><div class="step-label">Ready For Dispatch</div><div class="step-sub">${isDone && wo.readyForDispatchUpdatedBy ? 'By '+wo.readyForDispatchUpdatedBy+(wo.readyForDispatchUpdatedAt?' · '+formatDate(wo.readyForDispatchUpdatedAt):'') : ''}</div></div>
+    <div>
+      <div class="step-label">Ready For Dispatch ${supplyBadge}</div>
+      <div class="step-sub">${isDone && wo.readyForDispatchUpdatedBy ? 'By '+wo.readyForDispatchUpdatedBy+(wo.readyForDispatchUpdatedAt?' · '+formatDate(wo.readyForDispatchUpdatedAt):'') : ''}</div>
+    </div>
     <div class="step-actions">
       ${stepBadge(wo.readyForDispatchStatus||'PENDING')}
       ${canToggle && !isDone ? `<button class="btn btn-success btn-xs" id="rfdDoneBtn">Mark Done</button>` : ''}
@@ -1550,9 +1585,7 @@ function bindDetailActions(wo) {
   });
 
   // Ready For Dispatch
-  id('rfdDoneBtn')?.addEventListener('click', async () => {
-    await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=DONE`, 'Ready For Dispatch marked Done');
-  });
+  id('rfdDoneBtn')?.addEventListener('click', () => showRfdOptions(wo));
   id('rfdRevertBtn')?.addEventListener('click', async () => {
     await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=PENDING`, 'Ready For Dispatch reverted');
   });
@@ -1574,6 +1607,9 @@ function bindDetailActions(wo) {
   // Notes & Issues
   id('editNoteBtn')?.addEventListener('click', () => showNoteModal(wo));
   id('reportIssueBtn')?.addEventListener('click', () => showIssueModal(wo));
+
+  // Remark
+  bindRemarkBtn(wo);
 
   // Files
   id('reviseExcelBtn')?.addEventListener('click', () => showRevisionModal(wo));
@@ -2561,12 +2597,9 @@ async function api(url, method = 'GET', body = null) {
   if (State.token) opts.headers['Authorization'] = `Bearer ${State.token}`;
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(url, opts);
-  if (res.status === 401) {
-    forceLogout();
-    throw new Error('Session expired. Please log in again.');
-  }
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
+  if (res.status === 401) { forceLogout(); throw new Error('Session expired. Please log in again.'); }
+  const data = await _parseResponse(res);
+  if (!res.ok) throw new Error(data?.message || `Server error (${res.status})`);
   return data;
 }
 
@@ -2574,13 +2607,20 @@ async function apiFormData(url, formData, method = 'POST') {
   const opts = { method, body: formData };
   if (State.token) opts.headers = { 'Authorization': `Bearer ${State.token}` };
   const res = await fetch(url, opts);
-  if (res.status === 401) {
-    forceLogout();
-    throw new Error('Session expired. Please log in again.');
-  }
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
+  if (res.status === 0 || res.type === 'error') throw new Error('Network error — please check your connection and try again.');
+  if (res.status === 401) { forceLogout(); throw new Error('Session expired. Please log in again.'); }
+  const data = await _parseResponse(res);
+  if (!res.ok) throw new Error(data?.message || `Server error (${res.status})`);
   return data;
+}
+
+async function _parseResponse(res) {
+  try {
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error('Invalid or empty response from server. Please try again.');
+  }
 }
 
 // ── UTILS ──────────────────────────────────────────────────────────
@@ -3378,6 +3418,99 @@ State.tallyWoId = null;
 State.tallyCurrentTab = 1;
 State.tallyImportMethod = 'v374';
 State.tallyCurrentWo = null;
+State.tallySelectedServer = '';
+
+// ── Tally Server selector (presets + remembered custom + this-machine auto-detect) ──
+const TALLY_PRESET_SERVERS = ['192.168.151.7:9000', '192.168.151.2:9000'];
+
+function getTallyKnownServers() {
+  let extra = [];
+  try { extra = JSON.parse(localStorage.getItem('tallyKnownServers') || '[]'); } catch (e) { extra = []; }
+  const all = [...TALLY_PRESET_SERVERS];
+  extra.forEach(s => { if (s && !all.includes(s)) all.push(s); });
+  return all;
+}
+
+function rememberTallyServer(addr) {
+  if (!addr) return;
+  let extra = [];
+  try { extra = JSON.parse(localStorage.getItem('tallyKnownServers') || '[]'); } catch (e) { extra = []; }
+  if (!TALLY_PRESET_SERVERS.includes(addr) && !extra.includes(addr)) {
+    extra.push(addr);
+    localStorage.setItem('tallyKnownServers', JSON.stringify(extra));
+  }
+  localStorage.setItem('tallyLastServer', addr);
+}
+
+function initTallyServerSelector() {
+  const sel = id('tallyServerSelect');
+  if (!sel) return;
+  const known = getTallyKnownServers();
+  const last = localStorage.getItem('tallyLastServer') || known[0] || '';
+  sel.innerHTML = known.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')
+    + `<option value="__auto__">🖥 This Machine (auto-detect)</option>`
+    + `<option value="__custom__">+ Custom address…</option>`;
+  if (known.includes(last)) sel.value = last;
+  State.tallySelectedServer = sel.value;
+  const customInput = id('tallyServerCustomInput');
+  if (customInput) customInput.style.display = 'none';
+  sel.style.display = '';
+}
+
+async function onTallyServerSelectChange() {
+  const sel = id('tallyServerSelect');
+  const customInput = id('tallyServerCustomInput');
+  const resolving = id('tallyServerResolving');
+  const val = sel.value;
+
+  if (val === '__custom__') {
+    sel.style.display = 'none';
+    if (customInput) { customInput.style.display = ''; customInput.value = ''; customInput.focus(); }
+    return;
+  }
+
+  if (val === '__auto__') {
+    if (resolving) resolving.style.display = '';
+    try {
+      const res = await api('/api/tally/client-ip', 'GET');
+      const ip = res.data?.ip;
+      if (!ip) throw new Error('Could not detect IP');
+      const addr = `${ip}:9000`;
+      rememberTallyServer(addr);
+      initTallyServerSelector();
+      sel.value = addr;
+      State.tallySelectedServer = addr;
+      showToast(`Using this machine: ${addr}`, 'success');
+    } catch (e) {
+      showToast('Could not auto-detect this machine\'s IP: ' + e.message, 'error');
+      sel.value = State.tallySelectedServer || TALLY_PRESET_SERVERS[0];
+    } finally {
+      if (resolving) resolving.style.display = 'none';
+    }
+    return;
+  }
+
+  State.tallySelectedServer = val;
+  rememberTallyServer(val);
+}
+
+function confirmTallyServerCustom() {
+  const sel = id('tallyServerSelect');
+  const customInput = id('tallyServerCustomInput');
+  if (!sel || !customInput) return;
+  const addr = customInput.value.trim();
+  customInput.style.display = 'none';
+  sel.style.display = '';
+  if (!addr) { sel.value = State.tallySelectedServer || TALLY_PRESET_SERVERS[0]; return; }
+  rememberTallyServer(addr);
+  initTallyServerSelector();
+  sel.value = addr;
+  State.tallySelectedServer = addr;
+}
+
+function getSelectedTallyServer() {
+  return State.tallySelectedServer || '';
+}
 
 function injectTallyFloatBtn(wo) {
   const btn = document.createElement('button');
@@ -3419,6 +3552,7 @@ async function openTallyModal(wo) {
 
   const modal = id('tallyInvoiceModal');
   modal.style.display = 'flex';
+  initTallyServerSelector();
 
   // Reset result box
   const resultBox = id('tallyResultBox');
@@ -3637,7 +3771,7 @@ async function checkTallyParts() {
   </div>`;
 
   try {
-    const res = await api('/api/tally/check-parts', 'POST', { parts: active.map(p => p.partNo) });
+    const res = await api('/api/tally/check-parts', 'POST', { parts: active.map(p => p.partNo), tallyServer: getSelectedTallyServer() });
     State.tallyCheckResult = res.data;
     renderTallyCheckPanel();
   } catch (e) {
@@ -3656,7 +3790,8 @@ async function pingTallyServer() {
   btn.textContent = '🔌 Checking…';
   statusEl.textContent = '';
   try {
-    const res = await api('/api/tally/ping', 'GET');
+    const server = getSelectedTallyServer();
+    const res = await api(`/api/tally/ping${server ? '?tallyServer=' + encodeURIComponent(server) : ''}`, 'GET');
     const d = res.data;
     if (d.status === 'UP') {
       statusEl.textContent = '✓ Tally is running';
@@ -3984,6 +4119,7 @@ function collectTallyRequest() {
     boxSize: getVal('tallyBoxSize'),
     boxType: getVal('tallyBoxType'),
     mainInvoiceFolder: getVal('tallyMainFolder'),
+    tallyServer: getSelectedTallyServer(),
   };
 }
 
@@ -4129,3 +4265,528 @@ function setVal(elId, val) {
 function getVal(elId) {
   return id(elId)?.value?.trim() ?? '';
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// SUPPLY DISCREPANCY — RFD 4-option dialog
+// ═══════════════════════════════════════════════════════════════════
+
+function showRfdOptions(wo) {
+  showModal('Ready For Dispatch — How to mark?',
+    `<div class="rfd-option-grid">
+      <button class="rfd-option-btn rfd-done" id="rfdOptDone">
+        <span class="rfd-opt-icon">✅</span>
+        <span class="rfd-opt-title">Mark as Done</span>
+        <span class="rfd-opt-sub">All parts dispatched exactly as invoiced</span>
+      </button>
+      <button class="rfd-option-btn rfd-short" id="rfdOptShort">
+        <span class="rfd-opt-icon">⚠️</span>
+        <span class="rfd-opt-title">Mark with Short Supply</span>
+        <span class="rfd-opt-sub">Some parts sent less than invoiced — remaining to send later</span>
+      </button>
+      <button class="rfd-option-btn rfd-exceed" id="rfdOptExceed">
+        <span class="rfd-opt-icon">⬆️</span>
+        <span class="rfd-opt-title">Mark with Exceed Supply</span>
+        <span class="rfd-opt-sub">Some parts sent more than invoiced</span>
+      </button>
+      <button class="rfd-option-btn rfd-both" id="rfdOptBoth">
+        <span class="rfd-opt-icon">⚠️⬆️</span>
+        <span class="rfd-opt-title">Mark with Both Short &amp; Exceed</span>
+        <span class="rfd-opt-sub">Some parts short, some parts exceeded</span>
+      </button>
+    </div>`,
+    [{ label: 'Cancel', cls: 'btn-outline', close: true }]
+  );
+  id('rfdOptDone')?.addEventListener('click', async () => {
+    closeModal();
+    await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=DONE`, 'Ready For Dispatch marked Done');
+  });
+  id('rfdOptShort')?.addEventListener('click', () => { closeModal(); openSupplyModal(wo, 'SHORT'); });
+  id('rfdOptExceed')?.addEventListener('click', () => { closeModal(); openSupplyModal(wo, 'EXCEED'); });
+  id('rfdOptBoth')?.addEventListener('click', () => { closeModal(); openSupplyModal(wo, 'BOTH'); });
+}
+
+// ── Supply Modal ─────────────────────────────────────────────────
+
+let _supplyWo = null;
+let _supplyType = null;
+let _supplyParsedParts = [];
+
+async function openSupplyModal(wo, supplyType) {
+  _supplyWo   = wo;
+  _supplyType = supplyType;
+  _supplyParsedParts = [];
+
+  const typeLabel = supplyType === 'SHORT' ? 'Short Supply'
+                  : supplyType === 'EXCEED' ? 'Exceed Supply'
+                  : 'Both Short & Exceed Supply';
+  id('supplyModalTitle').textContent = `${typeLabel} — ${wo.woNumber} · ${wo.customerName}`;
+  id('supplyModalBody').innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3)">Loading parts from Excel…</div>`;
+  id('supplyModalFooter').innerHTML = '';
+  id('supplyModal').style.display = 'flex';
+
+  // Get the latest excel file ID
+  const fileId = wo.latestExcelFileId || (wo.excelFiles && wo.excelFiles.length > 0 ? wo.excelFiles[wo.excelFiles.length-1].id : null);
+  if (!fileId) {
+    id('supplyModalBody').innerHTML = `<div class="supply-no-excel"><span style="font-size:2rem">📊</span><p>No Excel file found for this dispatch.</p><p style="color:var(--text3);font-size:.85rem">Please upload an Excel file first.</p></div>`;
+    id('supplyModalFooter').innerHTML = `<button class="btn btn-outline" onclick="closeSupplyModal()">Close</button>`;
+    return;
+  }
+
+  try {
+    const parts = await _parseExcelForTallyParts(fileId);
+    _supplyParsedParts = parts;
+    renderSupplyTable(wo, supplyType, parts);
+  } catch(e) {
+    id('supplyModalBody').innerHTML = `<div class="supply-no-excel"><span style="font-size:2rem">⚠️</span><p>Failed to load Excel: ${esc(e.message)}</p></div>`;
+    id('supplyModalFooter').innerHTML = `<button class="btn btn-outline" onclick="closeSupplyModal()">Close</button>`;
+  }
+}
+
+function renderSupplyTable(wo, supplyType, parts) {
+  const showShort  = supplyType === 'SHORT'  || supplyType === 'BOTH';
+  const showExceed = supplyType === 'EXCEED' || supplyType === 'BOTH';
+
+  const colsHead = `
+    <th style="width:36px"><input type="checkbox" id="supplySelectAll" title="Select all"></th>
+    <th>WO</th><th>PO No.</th><th>SR No.</th><th>Part No.</th>
+    <th>PO Qty<br><small style="color:var(--text3);font-weight:400">(manual)</small></th>
+    <th>Inv Qty<br><small style="color:var(--text3);font-weight:400">(from sheet)</small></th>
+    <th>Desp Qty<br><small style="color:var(--text3);font-weight:400">(actual sent)</small></th>
+    ${showShort  ? `<th style="background:rgba(251,191,36,.18)">Short Qty<br><small style="color:var(--amber);font-weight:400">(to send later)</small></th>` : ''}
+    ${showExceed ? `<th style="background:rgba(34,197,94,.12)">Exceed Qty<br><small style="color:var(--green);font-weight:400">(sent extra)</small></th>` : ''}
+  `;
+
+  const rows = parts.map((p, i) => `
+    <tr id="supply-row-${i}">
+      <td style="text-align:center"><input type="checkbox" class="supply-row-chk" data-idx="${i}"></td>
+      <td><input class="supply-cell" data-idx="${i}" data-field="woNum" value="${esc(wo.woNumber)}" readonly style="background:var(--surface2);color:var(--text3);width:80px"></td>
+      <td><input class="supply-cell" data-idx="${i}" data-field="poNo" value="${esc(p.poNo||'')}" style="width:90px"></td>
+      <td><input class="supply-cell" data-idx="${i}" data-field="srNo" value="${esc(p.poSrNo||'')}" style="width:60px"></td>
+      <td><input class="supply-cell" data-idx="${i}" data-field="partNo" value="${esc(p.partNo||'')}" style="width:130px;font-family:monospace;font-size:.78rem"></td>
+      <td><input class="supply-cell supply-num" data-idx="${i}" data-field="poQty" value="" placeholder="—" style="width:60px"></td>
+      <td><input class="supply-cell supply-num" data-idx="${i}" data-field="invQty" value="${p.qty||0}" style="width:60px;background:var(--surface2);color:var(--text3)" readonly></td>
+      <td><input class="supply-cell supply-num" data-idx="${i}" data-field="actualDespQty" value="${p.qty||0}" placeholder="${p.qty||0}" style="width:70px"></td>
+      ${showShort  ? `<td style="background:rgba(251,191,36,.10)"><input class="supply-cell supply-num" data-idx="${i}" data-field="shortQty" value="0" style="width:70px;font-weight:600;color:var(--amber)"></td>` : ''}
+      ${showExceed ? `<td style="background:rgba(34,197,94,.08)"><input class="supply-cell supply-num" data-idx="${i}" data-field="exceedQty" value="0" style="width:70px;font-weight:600;color:var(--green)"></td>` : ''}
+    </tr>
+  `).join('');
+
+  id('supplyModalBody').innerHTML = `
+    <div style="padding:12px 16px 6px;border-bottom:1px solid var(--border)">
+      <p style="color:var(--text2);font-size:.85rem;margin:0">
+        Select the rows that have supply discrepancies. Fill in quantities for selected rows.<br>
+        <strong style="color:var(--amber)">Tip:</strong> Actual Desp Qty = what you actually packed and sent.
+      </p>
+    </div>
+    <div style="overflow:auto;max-height:60vh">
+      <table class="supply-table">
+        <thead><tr>${colsHead}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+
+  id('supplyModalFooter').innerHTML = `
+    <span style="color:var(--text3);font-size:.82rem" id="supplySelCount">0 row(s) selected</span>
+    <div style="display:flex;gap:8px;margin-left:auto">
+      ${showExceed ? `<button class="btn btn-outline" id="supplyAddRowBtn" style="border-color:var(--green);color:var(--green)" onclick="addSupplyRow()">＋ Add Row</button>` : ''}
+      <button class="btn btn-outline" onclick="closeSupplyModal()">Cancel</button>
+      <button class="btn btn-success" id="supplySubmitBtn">💾 Save &amp; Mark Ready For Dispatch</button>
+    </div>
+  `;
+
+  // Select All
+  id('supplySelectAll')?.addEventListener('change', function() {
+    document.querySelectorAll('.supply-row-chk').forEach(c => c.checked = this.checked);
+    updateSupplySelCount();
+  });
+  document.querySelectorAll('.supply-row-chk').forEach(c => c.addEventListener('change', updateSupplySelCount));
+
+  // Live cell editing + auto-calculate SHORT/DESP linkage
+  id('supplyModalBody').addEventListener('input', e => {
+    const el = e.target;
+    if (!el.classList.contains('supply-cell')) return;
+    const idx   = parseInt(el.dataset.idx, 10);
+    const field = el.dataset.field;
+    if (!Number.isInteger(idx) || !field) return;
+
+    _supplyParsedParts[idx] = _supplyParsedParts[idx] || {};
+    _supplyParsedParts[idx][field] = el.value;
+
+    // Auto-calculate: INV QTY = DESP QTY + SHORT QTY (SHORT and BOTH types only)
+    if (showShort && (field === 'shortQty' || field === 'actualDespQty')) {
+      const invEl   = document.querySelector(`.supply-cell[data-idx="${idx}"][data-field="invQty"]`);
+      const shortEl = document.querySelector(`.supply-cell[data-idx="${idx}"][data-field="shortQty"]`);
+      const despEl  = document.querySelector(`.supply-cell[data-idx="${idx}"][data-field="actualDespQty"]`);
+      if (invEl && shortEl && despEl) {
+        const invQty = parseFloat(invEl.value) || 0;
+        if (field === 'shortQty') {
+          const newDesp = Math.max(0, invQty - (parseFloat(el.value) || 0));
+          despEl.value = newDesp;
+          _supplyParsedParts[idx].actualDespQty = newDesp;
+        } else {
+          const newShort = Math.max(0, invQty - (parseFloat(el.value) || 0));
+          shortEl.value = newShort;
+          _supplyParsedParts[idx].shortQty = newShort;
+        }
+      }
+    }
+  });
+
+  id('supplySubmitBtn')?.addEventListener('click', () => submitSupplyEntries(wo, supplyType));
+}
+
+function addSupplyRow() {
+  const wo          = _supplyWo;
+  const supplyType  = _supplyType;
+  const showShort   = supplyType === 'SHORT'  || supplyType === 'BOTH';
+  const showExceed  = supplyType === 'EXCEED' || supplyType === 'BOTH';
+  const i           = _supplyParsedParts.length;
+
+  _supplyParsedParts.push({ woNum: wo.woNumber, poNo: '', poSrNo: '', partNo: '', qty: 0, poQty: '', invQty: 0, actualDespQty: 0, shortQty: 0, exceedQty: 0 });
+
+  const tbody = document.querySelector('#supplyModalBody .supply-table tbody');
+  if (!tbody) return;
+
+  const tr = document.createElement('tr');
+  tr.id = `supply-row-${i}`;
+  tr.innerHTML = `
+    <td style="text-align:center"><input type="checkbox" class="supply-row-chk" data-idx="${i}" checked></td>
+    <td><input class="supply-cell" data-idx="${i}" data-field="woNum" value="${esc(wo.woNumber)}" readonly style="background:var(--surface2);color:var(--text3);width:80px"></td>
+    <td><input class="supply-cell" data-idx="${i}" data-field="poNo" value="" placeholder="PO No." style="width:90px"></td>
+    <td><input class="supply-cell" data-idx="${i}" data-field="srNo" value="" placeholder="SR No." style="width:60px"></td>
+    <td><input class="supply-cell" data-idx="${i}" data-field="partNo" value="" placeholder="Part No." style="width:130px;font-family:monospace;font-size:.78rem"></td>
+    <td><input class="supply-cell supply-num" data-idx="${i}" data-field="poQty" value="" placeholder="—" style="width:60px"></td>
+    <td><input class="supply-cell supply-num" data-idx="${i}" data-field="invQty" value="0" style="width:60px"></td>
+    <td><input class="supply-cell supply-num" data-idx="${i}" data-field="actualDespQty" value="0" style="width:70px"></td>
+    ${showShort  ? `<td style="background:rgba(251,191,36,.10)"><input class="supply-cell supply-num" data-idx="${i}" data-field="shortQty" value="0" style="width:70px;font-weight:600;color:var(--amber)"></td>` : ''}
+    ${showExceed ? `<td style="background:rgba(34,197,94,.08)"><input class="supply-cell supply-num" data-idx="${i}" data-field="exceedQty" value="0" style="width:70px;font-weight:600;color:var(--green)"></td>` : ''}
+  `;
+  tbody.appendChild(tr);
+
+  tr.querySelector('.supply-row-chk').addEventListener('change', updateSupplySelCount);
+  tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  updateSupplySelCount();
+}
+
+function updateSupplySelCount() {
+  const n = document.querySelectorAll('.supply-row-chk:checked').length;
+  const el = id('supplySelCount');
+  if (el) el.textContent = `${n} row(s) selected`;
+}
+
+async function submitSupplyEntries(wo, supplyType) {
+  const selected = [...document.querySelectorAll('.supply-row-chk:checked')];
+  if (!selected.length) { showToast('Please select at least one row', 'error'); return; }
+
+  const parts = selected.map(chk => {
+    const idx = parseInt(chk.dataset.idx, 10);
+    const row = id(`supply-row-${idx}`);
+    const cell = f => row?.querySelector(`[data-field="${f}"]`)?.value ?? '';
+    return {
+      partNo:        cell('partNo'),
+      poNo:          cell('poNo'),
+      srNo:          cell('srNo'),
+      invQty:        parseInt(cell('invQty'), 10)        || 0,
+      poQty:         parseInt(cell('poQty'), 10)         || 0,
+      actualDespQty: parseInt(cell('actualDespQty'), 10) || 0,
+      shortQty:      parseInt(cell('shortQty'), 10)      || 0,
+      exceedQty:     parseInt(cell('exceedQty'), 10)     || 0,
+    };
+  });
+
+  const btn = id('supplySubmitBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    await api(`/api/supply/${wo.id}`, 'POST', { supplyType, parts });
+    closeSupplyModal();
+    showToast('Supply entries saved & Ready For Dispatch marked!', 'success');
+    // Refresh DL detail
+    const res = await api(`/api/workorders/${wo.id}`);
+    State.currentWo = res.data;
+    renderWoDetail(res.data);
+    triggerImmediateSync();
+    // Refresh cart badge
+    refreshCartBadge();
+  } catch(e) {
+    showToast(e.message || 'Failed to save', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Save & Mark Ready For Dispatch'; }
+  }
+}
+
+function closeSupplyModal() {
+  id('supplyModal').style.display = 'none';
+  _supplyWo = null; _supplyType = null; _supplyParsedParts = [];
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// REMARK — display in DL detail
+// ═══════════════════════════════════════════════════════════════════
+
+function renderRemarkSection(wo, role) {
+  const r = wo.dlRemark;
+  const hasRemark = r && r.remark && r.remark.trim();
+  const canEdit   = role === 'GENERAL_MANAGER' || role === 'STORE';
+
+  if (!hasRemark && !canEdit) return '';
+
+  return `
+    <div class="detail-remark-section ${hasRemark ? 'has-remark' : ''}">
+      <div class="detail-remark-header">
+        <span>📌 Manager Remark</span>
+        ${canEdit ? `<button class="btn btn-outline btn-xs" id="editRemarkBtn">${hasRemark ? '✏ Edit Remark' : '＋ Add Remark'}</button>` : ''}
+      </div>
+      ${hasRemark
+        ? `<div class="detail-remark-text">${esc(r.remark)}</div>
+           <div class="detail-remark-meta">By ${esc(r.updatedBy||'—')} · ${formatDate(r.updatedAt)}</div>`
+        : `<div class="detail-remark-empty">No remark added yet.</div>`}
+    </div>
+  `;
+}
+
+function renderSupplyEntriesSection(wo, role) {
+  if (!wo.supplyEntries || !wo.supplyEntries.length) return '';
+  const canResolve = role === 'STORE' || role === 'GENERAL_MANAGER';
+  const pending = wo.supplyEntries.filter(e => !e.resolved);
+  const resolved = wo.supplyEntries.filter(e => e.resolved);
+
+  const entryRows = (entries, showResolve) => entries.map(e => `
+    <div class="supply-entry-row ${e.resolved ? 'resolved' : ''}">
+      <div class="supply-entry-info">
+        <span class="supply-entry-part">${esc(e.partNo||'—')}</span>
+        <span class="supply-entry-meta">PO: ${esc(e.poNo||'—')} · SR: ${esc(e.srNo||'—')}</span>
+        <span class="supply-entry-qtys">
+          Inv: <b>${e.invQty??'—'}</b> · Sent: <b>${e.actualDespQty??'—'}</b>
+          ${e.shortQty  > 0 ? `· <span style="color:var(--amber)">Short: <b>${e.shortQty}</b></span>` : ''}
+          ${e.exceedQty > 0 ? `· <span style="color:var(--green)">Exceed: <b>${e.exceedQty}</b></span>` : ''}
+        </span>
+        <span class="supply-entry-by">By ${esc(e.createdBy||'—')} · ${formatDate(e.createdAt)}</span>
+      </div>
+      ${showResolve && canResolve ? `<button class="btn btn-outline btn-xs" onclick="resolveSupplyEntry(${e.id})">✓ Done</button>` : ''}
+    </div>
+  `).join('');
+
+  return `
+    <div class="supply-entries-section">
+      <div class="supply-entries-header">
+        <span>Supply Discrepancy Entries
+          ${wo.supplyStatus !== 'NONE' ? `<span class="supply-badge supply-badge-${(wo.supplyStatus||'').toLowerCase()}">${wo.supplyStatus==='SHORT'?'⚠ Short':wo.supplyStatus==='EXCEED'?'↑ Exceed':'⚠↑ Both'}</span>` : ''}
+        </span>
+      </div>
+      ${pending.length > 0 ? `
+        <div class="supply-entries-group">
+          <div class="supply-entries-group-title">Pending (${pending.length})</div>
+          ${entryRows(pending, true)}
+        </div>` : ''}
+      ${resolved.length > 0 ? `
+        <div class="supply-entries-group" style="opacity:.6">
+          <div class="supply-entries-group-title">Resolved (${resolved.length})</div>
+          ${entryRows(resolved, false)}
+        </div>` : ''}
+    </div>
+  `;
+}
+
+async function resolveSupplyEntry(entryId) {
+  try {
+    await api(`/api/supply/entry/${entryId}/resolve`, 'PATCH');
+    showToast('Entry marked as done', 'success');
+    const res = await api(`/api/workorders/${State.currentWo.id}`);
+    State.currentWo = res.data;
+    renderWoDetail(res.data);
+    refreshCartBadge();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+// Remark editing
+function bindRemarkBtn(wo) {
+  id('editRemarkBtn')?.addEventListener('click', () => showRemarkModal(wo));
+}
+
+function showRemarkModal(wo) {
+  const current = (wo.dlRemark && wo.dlRemark.remark) ? wo.dlRemark.remark : '';
+  const history  = wo.dlRemark && wo.dlRemark.history ? wo.dlRemark.history : [];
+  const histHtml = history.length
+    ? `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:.78rem;font-weight:600;color:var(--text2);margin-bottom:8px">Previous Remarks</div>
+        ${history.map(h => `<div class="remark-history-item"><div class="remark-history-text">${esc(h.remark||'')}</div><div class="remark-history-meta">By ${esc(h.changedBy||'—')} · ${formatDate(h.changedAt)}</div></div>`).join('')}
+       </div>` : '';
+
+  showModal('Edit Manager Remark',
+    `<div class="field-group">
+       <label>Remark <small style="color:var(--text3)">(visible to everyone in orange)</small></label>
+       <textarea id="remarkText" rows="4" placeholder="Add a remark for this dispatch…" style="width:100%">${esc(current)}</textarea>
+     </div>
+     ${histHtml}
+     <div id="remarkAlert" class="alert" style="display:none;margin-top:8px"></div>`,
+    [
+      { label: 'Save Remark', cls: 'btn-primary', id: 'saveRemarkBtn' },
+      { label: 'Cancel', cls: 'btn-outline', close: true }
+    ]
+  );
+  id('saveRemarkBtn')?.addEventListener('click', async () => {
+    const val = id('remarkText')?.value?.trim() ?? '';
+    const btn = id('saveRemarkBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await api(`/api/remarks/${wo.id}`, 'PUT', { remark: val });
+      closeModal();
+      showToast('Remark saved', 'success');
+      const res = await api(`/api/workorders/${wo.id}`);
+      State.currentWo = res.data;
+      renderWoDetail(res.data);
+    } catch(e) {
+      const a = id('remarkAlert');
+      if (a) { a.textContent = e.message; a.style.display = 'block'; }
+    } finally { btn.disabled = false; btn.textContent = 'Save Remark'; }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// STORE CART PAGE
+// ═══════════════════════════════════════════════════════════════════
+
+let _cartTab = 'all';
+let _cartData = [];
+
+async function loadStoreCart() {
+  const el = id('cartContent');
+  if (el) el.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text3)">Loading…</div>`;
+
+  // Bind tab buttons
+  document.querySelectorAll('.cart-tab').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.cart-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _cartTab = btn.dataset.ctab;
+      renderCartContent(_cartData, _cartTab);
+    };
+  });
+  id('cartRefreshBtn')?.addEventListener('click', loadStoreCart);
+
+  try {
+    const res = await api('/api/supply/cart');
+    _cartData = res.data || [];
+    renderCartContent(_cartData, _cartTab);
+    refreshCartBadge(_cartData.length);
+  } catch(e) {
+    if (el) el.innerHTML = `<div style="text-align:center;padding:60px;color:var(--danger)">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderCartContent(data, tab) {
+  const el = id('cartContent');
+  if (!el) return;
+
+  let filtered = data;
+  if (tab === 'short')  filtered = data.filter(d => d.supplyStatus === 'SHORT' || d.supplyStatus === 'BOTH');
+  if (tab === 'exceed') filtered = data.filter(d => d.supplyStatus === 'EXCEED' || d.supplyStatus === 'BOTH');
+
+  if (!filtered.length) {
+    el.innerHTML = `<div class="cart-empty">
+      <div style="font-size:2.5rem">🛒</div>
+      <div style="font-weight:600;font-size:1.05rem;margin-top:12px">Cart is empty</div>
+      <div style="color:var(--text3);font-size:.9rem;margin-top:6px">No pending supply discrepancies for this filter.</div>
+    </div>`;
+    return;
+  }
+
+  const role = State.user?.role;
+  const canAct = role === 'STORE' || role === 'GENERAL_MANAGER';
+
+  el.innerHTML = filtered.map(d => {
+    const ss = d.supplyStatus;
+    const entries = d.entries || [];
+    const hasShort  = entries.some(e => e.shortQty  > 0);
+    const hasExceed = entries.some(e => e.exceedQty > 0);
+
+    const entryRows = entries.map(e => `
+      <tr class="cart-entry-row">
+        <td style="font-family:monospace;font-size:.78rem">${esc(e.partNo||'—')}</td>
+        <td>${esc(e.poNo||'—')}</td>
+        <td>${esc(e.srNo||'—')}</td>
+        <td style="text-align:right">${e.invQty??'—'}</td>
+        <td style="text-align:right">${e.poQty||'—'}</td>
+        <td style="text-align:right">${e.actualDespQty??'—'}</td>
+        ${hasShort  ? `<td style="text-align:right;color:var(--amber);font-weight:600">${e.shortQty  > 0 ? e.shortQty  : '—'}</td>` : ''}
+        ${hasExceed ? `<td style="text-align:right;color:var(--green);font-weight:600">${e.exceedQty > 0 ? e.exceedQty : '—'}</td>` : ''}
+        <td style="text-align:center">
+          ${canAct ? `<button class="btn btn-outline btn-xs" onclick="resolveCartEntry(${e.id}, this)">✓ Done</button>` : '—'}
+        </td>
+      </tr>
+    `).join('');
+
+    return `
+      <div class="cart-card supply-card-orange" id="cartCard-${d.id}">
+        <div class="cart-card-header" onclick="toggleCartCard(${d.id})">
+          <div class="cart-card-title">
+            <span class="cart-wo-num">${esc(d.woNumber)}</span>
+            <span class="cart-customer">${esc(d.customerName)}</span>
+            <span class="supply-badge supply-badge-${(ss||'').toLowerCase()}">${ss==='SHORT'?'⚠ Short':ss==='EXCEED'?'↑ Exceed':'⚠↑ Both'}</span>
+          </div>
+          <div class="cart-card-meta">
+            <span>${esc(d.shipmentMode||'')}</span>
+            <span class="cart-count-badge">${d.pendingCount} item${d.pendingCount!==1?'s':''}</span>
+            <span class="cart-expand-icon" id="cartChevron-${d.id}">▼</span>
+          </div>
+        </div>
+        <div class="cart-card-body" id="cartBody-${d.id}" style="display:none">
+          <div class="cart-entry-btns">
+            <button class="btn btn-outline btn-xs" onclick="openWoDetail(${d.id})">👁 Open DL</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="supply-table cart-table">
+              <thead><tr>
+                <th>Part No.</th><th>PO No.</th><th>SR No.</th>
+                <th>Inv Qty</th><th>PO Qty</th><th>Desp Qty</th>
+                ${hasShort  ? `<th style="color:var(--amber)">Short Qty</th>` : ''}
+                ${hasExceed ? `<th style="color:var(--green)">Exceed Qty</th>` : ''}
+                <th>Action</th>
+              </tr></thead>
+              <tbody>${entryRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleCartCard(id_) {
+  const body = id(`cartBody-${id_}`);
+  const icon = id(`cartChevron-${id_}`);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (icon) icon.textContent = open ? '▼' : '▲';
+}
+
+async function resolveCartEntry(entryId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    await api(`/api/supply/entry/${entryId}/resolve`, 'PATCH');
+    showToast('Entry marked done', 'success');
+    await loadStoreCart();
+  } catch(e) {
+    showToast(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Done'; }
+  }
+}
+
+async function refreshCartBadge(count) {
+  const badge = id('cartBadge');
+  if (!badge) return;
+  if (count === undefined) {
+    try {
+      const res = await api('/api/supply/cart');
+      count = (res.data || []).length;
+    } catch(_) { return; }
+  }
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+

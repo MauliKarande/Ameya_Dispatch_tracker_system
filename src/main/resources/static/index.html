@@ -70,6 +70,9 @@
       <a href="#" class="nav-item nav-only-sales-exec" data-page="rfd" title="Ready for Dispatch">
         <span class="nav-icon">🚚</span><span class="nav-label">Ready for Dispatch</span>
       </a>
+      <a href="#" class="nav-item nav-store-cart" data-page="store-cart" title="Store Cart" style="display:none">
+        <span class="nav-icon">🛒</span><span class="nav-label">Store Cart <span id="cartBadge" class="cart-nav-badge" style="display:none"></span></span>
+      </a>
       <a href="#" class="nav-item nav-only-admin" data-page="user-mgmt" title="User Management">
         <span class="nav-icon">👥</span><span class="nav-label">User Management</span>
       </a>
@@ -357,6 +360,25 @@
       <div id="woDetailContent"></div>
     </section>
 
+    <!-- STORE CART PAGE -->
+    <section id="pageStoreCart" class="page">
+      <div class="page-header">
+        <div>
+          <h2 class="page-title">🛒 Store Cart</h2>
+          <p class="page-sub">Pending short &amp; exceed supply items to track</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" id="cartRefreshBtn">⟳ Refresh</button>
+        </div>
+      </div>
+      <div class="cart-tabs">
+        <button class="cart-tab active" data-ctab="all">All Pending</button>
+        <button class="cart-tab" data-ctab="short">Short Supply</button>
+        <button class="cart-tab" data-ctab="exceed">Exceed Supply</button>
+      </div>
+      <div id="cartContent" class="cart-content"></div>
+    </section>
+
     <!-- USER MANAGEMENT PAGE -->
     <section class="page" id="pageUserMgmt">
       <div class="page-header">
@@ -407,6 +429,18 @@
       <div id="excelViewerLoading" style="text-align:center;padding:40px;color:var(--text3)">Loading file…</div>
       <div id="excelViewerTable" style="display:none;overflow:auto"></div>
     </div>
+  </div>
+</div>
+
+<!-- SUPPLY ENTRY MODAL -->
+<div id="supplyModal" class="modal-overlay" style="display:none">
+  <div class="modal-box supply-modal-box">
+    <div class="modal-header">
+      <h3 id="supplyModalTitle">Supply Entry</h3>
+      <button class="modal-close" onclick="closeSupplyModal()">✕</button>
+    </div>
+    <div class="modal-body" id="supplyModalBody" style="padding:0;overflow:auto;flex:1"></div>
+    <div class="modal-footer" id="supplyModalFooter"></div>
   </div>
 </div>
 
@@ -464,6 +498,15 @@
             style="margin-left:auto;background:#e65100;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:.78rem;font-weight:700;cursor:pointer">
             ⚠ Wrong parts? Switch to V3.5
           </button>
+        </div>
+        <!-- Tally server selector -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;padding:7px 12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px">
+          <span style="font-size:.8rem;font-weight:600;color:#3730a3">🖥 Tally Server:</span>
+          <select id="tallyServerSelect" onchange="onTallyServerSelectChange()"
+            style="font-size:.8rem;padding:3px 6px;border-radius:5px;border:1px solid #c7d2fe;min-width:190px"></select>
+          <input id="tallyServerCustomInput" placeholder="e.g. 192.168.151.10:9000" style="display:none;font-size:.8rem;padding:3px 6px;border-radius:5px;border:1px solid #c7d2fe;min-width:170px"
+            onkeydown="if(event.key==='Enter'){confirmTallyServerCustom();}" onblur="confirmTallyServerCustom()">
+          <span id="tallyServerResolving" style="font-size:.76rem;color:#6366f1;display:none">detecting…</span>
         </div>
         <!-- Toolbar: select-all + bulk-delete + check -->
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap">
