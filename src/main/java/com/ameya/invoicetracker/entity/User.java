@@ -44,6 +44,7 @@ public class User {
         STORE,             // Stock, Packing, Ready For Dispatch, Collection
         INVOICE_CREATOR,   // Invoice work
         SALES_EXECUTIVE,   // Marks Ready For Dispatch as done
-        GUEST              // View only
+        GUEST,             // View only
+        LOGISTIC           // View only (like GUEST) + Export Dispatch Data
     }
 }

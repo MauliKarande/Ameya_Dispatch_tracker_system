@@ -53,6 +53,7 @@ public class TallyInvoiceController {
         dto.setPartyTally(tallyName);
         dto.setCurrency(currency);
         dto.setPartyCountry(country);
+        dto.setPartyKnown(partyMatch != null);
 
         // --- Shipment mode mapping ---
         String mode = resolveMode(wo.getShipmentMode());
@@ -137,6 +138,22 @@ public class TallyInvoiceController {
         else if (tallyResponse.contains("LINEERROR")) status = "LINE_ERROR";
         else status = "UNKNOWN";
 
+        if (("CREATED".equals(status) || "ALTERED".equals(status)) && req.getWorkOrderId() != null) {
+            try {
+                TallyInvoiceService.InvoiceTotals totals = tallyService.computeTotals(req);
+                workOrderRepository.findById(req.getWorkOrderId()).ifPresent(wo -> {
+                    wo.setInvoiceCurrency(totals.currency());
+                    wo.setCurrencyExchangeRate(totals.exchangeRate());
+                    wo.setInvoiceValueInCurrency(totals.totalForeign());
+                    wo.setInvoiceValueInINR(totals.totalInr());
+                    workOrderRepository.save(wo);
+                });
+            } catch (Exception e) {
+                log.warn("Could not persist invoice currency/rate for workOrderId={}: {}",
+                        req.getWorkOrderId(), e.getMessage());
+            }
+        }
+
         Map<String, String> result = new HashMap<>();
         result.put("status", status);
         result.put("tallyResponse", tallyResponse.length() > 1000
@@ -212,6 +229,29 @@ public class TallyInvoiceController {
                     req.getBuyerName(),
                     req.getBuyerAddress());
             return ResponseEntity.ok(ApiResponse.ok("Party details saved to ameya_custom_data.json"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/tally/create-party
+     * Creates a new party in ameya_custom_data.json: exact Tally name, currency,
+     * country, and mailing address lines. Export details (AIR/SEA terms & ports)
+     * are saved separately via the existing /save-party flow.
+     */
+    @PostMapping("/create-party")
+    public ResponseEntity<ApiResponse<String>> createParty(@RequestBody Map<String, Object> body) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<String> addressLines = (List<String>) body.getOrDefault("addressLines", List.of());
+            customData.createParty(
+                    (String) body.get("partyName"),
+                    (String) body.get("currency"),
+                    (String) body.get("country"),
+                    (String) body.get("mailingName"),
+                    addressLines);
+            return ResponseEntity.ok(ApiResponse.ok("Party created"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
         }

@@ -43,6 +43,9 @@ public class DataSeeder implements CommandLineRunner {
         // ── GUEST ─────────────────────────────────────────────────────────────
         seedUser("guest", "Guest", User.Role.GUEST, "123");
 
+        // ── LOGISTIC ──────────────────────────────────────────────────────────
+        upsertLogisticUser("sanjay.khutwad", "Sanjay Khutwad", "123456");
+
         // ── CUSTOMERS ─────────────────────────────────────────────────────────
         List<String> customers = List.of(
             "TRILLIUM Flow Technologies France SAS",
@@ -91,6 +94,20 @@ public class DataSeeder implements CommandLineRunner {
                 .username(username).fullName(fullName).role(role)
                 .password(passwordEncoder.encode(rawPassword)).active(true).build());
             log.info("  Created: {} ({})", username, role);
+        }
+    }
+
+    // sanjay.khutwad already existed as a GUEST account in imported data — promote it to
+    // LOGISTIC once. Guarded by role check so we don't reset the password on every restart.
+    private void upsertLogisticUser(String username, String fullName, String rawPassword) {
+        User existing = userRepository.findByUsername(username).orElse(null);
+        if (existing == null) {
+            seedUser(username, fullName, User.Role.LOGISTIC, rawPassword);
+        } else if (existing.getRole() != User.Role.LOGISTIC) {
+            existing.setRole(User.Role.LOGISTIC);
+            existing.setPassword(passwordEncoder.encode(rawPassword));
+            userRepository.save(existing);
+            log.info("  Promoted to LOGISTIC: {}", username);
         }
     }
 }

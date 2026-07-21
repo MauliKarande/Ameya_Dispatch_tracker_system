@@ -75,6 +75,20 @@ public class TallyInvoiceService {
         }
     }
 
+    // ── Compute invoice totals (currency/rate/amounts) for persistence ───
+    // Mirrors the tf/ex/ti computation inside buildXml() without touching it,
+    // so the proven XML-generation path stays untouched.
+    public record InvoiceTotals(String currency, double exchangeRate, double totalForeign, double totalInr) {}
+
+    public InvoiceTotals computeTotals(TallyCreateRequest req) {
+        double ex = req.getExchangeRate() > 0 ? req.getExchangeRate() : 1.0;
+        String rawCurr = req.getCurrency() != null ? req.getCurrency().strip() : "DOLLAR";
+        double tf = req.getParts().stream().mapToDouble(TallyPartDTO::getAmount).sum();
+        tf = round2(tf);
+        double ti = round2(tf * ex);
+        return new InvoiceTotals(rawCurr, ex, tf, ti);
+    }
+
     // ── Ping Tally server ─────────────────────────────────────────────────
     public Map<String, String> pingTally(String tallyServerOverride) {
         String url = resolveTallyUrl(tallyServerOverride);

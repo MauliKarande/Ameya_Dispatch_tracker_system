@@ -9,6 +9,9 @@ public class TallyPrefillDTO {
     private String partyTally;
     private String currency;
     private String partyCountry;
+    // false when the customer couldn't be matched to any saved party — the UI
+    // then prompts to create the party once (name/currency/address)
+    private boolean partyKnown;
     // Shipment
     private String airSea;
     // Voucher

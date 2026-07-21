@@ -5,6 +5,7 @@ import java.util.List;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor
 public class TallyCreateRequest {
+    private Long workOrderId;
     private List<TallyPartDTO> parts;
     private String voucherNumber;
     private String voucherDate;

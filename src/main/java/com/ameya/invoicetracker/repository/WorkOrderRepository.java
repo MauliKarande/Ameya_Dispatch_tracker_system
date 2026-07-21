@@ -37,6 +37,21 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, Long> {
     @Query("SELECT w FROM WorkOrder w WHERE w.woDate BETWEEN :startDate AND :endDate ORDER BY w.createdAt DESC")
     List<WorkOrder> findByDateRange(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
 
+    // Export Dispatch Data: completed, non-domestic invoices in an invoice-date range.
+    // ROAD / HAND DELIVERY shipments are domestic by definition — this also catches
+    // real rows whose invoiceType was mislabeled 'Commercial' (e.g. S-26-27-00014).
+    @Query("SELECT w FROM WorkOrder w WHERE w.invoiceDate BETWEEN :startDate AND :endDate " +
+           "AND w.invoiceStatus = :invoiceStatus " +
+           "AND LOWER(w.invoiceType) <> 'domestic' " +
+           "AND UPPER(w.shipmentMode) NOT LIKE '%ROAD%' " +
+           "AND UPPER(w.shipmentMode) NOT LIKE '%HAND%' " +
+           "ORDER BY w.invoiceDate ASC, w.invoiceNumber ASC")
+    List<WorkOrder> findExportableInvoices(
+        @Param("startDate") LocalDate startDate,
+        @Param("endDate") LocalDate endDate,
+        @Param("invoiceStatus") WorkOrder.StepStatus invoiceStatus
+    );
+
     // Combined search: customer + month/year
     @Query("SELECT w FROM WorkOrder w WHERE " +
            "(:customer IS NULL OR LOWER(w.customerName) LIKE LOWER(CONCAT('%', :customer, '%'))) AND " +

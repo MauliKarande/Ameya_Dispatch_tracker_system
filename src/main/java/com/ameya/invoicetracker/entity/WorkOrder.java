@@ -91,6 +91,12 @@ public class WorkOrder {
     @Column private LocalDateTime invoiceUpdatedAt;
     @Column(length = 100) private String invoiceUpdatedBy;
 
+    // Currency / exchange rate captured at Tally invoice-creation time (Export Dispatch Data sheet)
+    @Column(length = 20) private String invoiceCurrency;
+    @Column private Double invoiceValueInCurrency;
+    @Column private Double currencyExchangeRate;
+    @Column private Double invoiceValueInINR;
+
     @Column(columnDefinition = "TEXT")
     private String invoiceIssue;
 

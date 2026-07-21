@@ -331,6 +331,53 @@ public class TallyCustomDataService {
         }
     }
 
+    /**
+     * Creates/updates a party's core identity: parties section (tally name,
+     * currency, country — what matchParty() resolves) and addresses section
+     * (mailing name + address lines — what goes into the Tally XML ADDRESS.LIST).
+     * Export details (terms/ports per AIR/SEA) are saved separately via savePartyDetails.
+     */
+    public void createParty(String partyName, String currency, String country,
+                            String mailingName, List<String> addressLines) {
+        if (partyName == null || partyName.isBlank())
+            throw new IllegalArgumentException("Party name is required");
+        try {
+            File f = Paths.get(customDataPath).toFile();
+            ObjectNode root = (ObjectNode) (f.exists() ? mapper.readTree(f) : mapper.createObjectNode());
+
+            if (!root.has("parties") || !root.get("parties").isObject())
+                root.set("parties", mapper.createObjectNode());
+            ObjectNode partiesRoot = (ObjectNode) root.get("parties");
+            ObjectNode partyEntry = mapper.createObjectNode();
+            partyEntry.put("tally_name", partyName);
+            partyEntry.put("currency",   currency != null && !currency.isBlank() ? currency : "DOLLAR");
+            partyEntry.put("country",    country  != null ? country  : "");
+            partiesRoot.set(partyName.toLowerCase(), partyEntry);
+
+            if (!root.has("addresses") || !root.get("addresses").isObject())
+                root.set("addresses", mapper.createObjectNode());
+            ObjectNode addrRoot = (ObjectNode) root.get("addresses");
+            ObjectNode addrEntry = mapper.createObjectNode();
+            addrEntry.put("mailing_name", mailingName != null && !mailingName.isBlank() ? mailingName : partyName);
+            addrEntry.put("country", country != null ? country : "");
+            var linesArr = mapper.createArrayNode();
+            if (addressLines != null) {
+                addressLines.stream()
+                        .filter(l -> l != null && !l.isBlank())
+                        .forEach(l -> linesArr.add(l.strip()));
+            }
+            addrEntry.set("address_lines", linesArr);
+            addrRoot.set(partyName, addrEntry);
+
+            mapper.writerWithDefaultPrettyPrinter().writeValue(f, root);
+            this.root = root;
+            log.info("Created/updated party '{}' with {} address lines", partyName, linesArr.size());
+        } catch (Exception e) {
+            log.error("Could not create party: {}", e.getMessage());
+            throw new RuntimeException("Failed to create party: " + e.getMessage());
+        }
+    }
+
     public void saveLastVoucherNo(String vn) {
         try {
             File f = Paths.get(customDataPath).toFile();

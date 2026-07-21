@@ -35,7 +35,7 @@ public class SchemaFixer implements CommandLineRunner {
                 if (typeName != null && typeName.toUpperCase().contains("ENUM")) {
                     log.info("SchemaFixer: converting users.role from ENUM to VARCHAR(50)");
                     conn.createStatement().execute(
-                        "ALTER TABLE users MODIFY COLUMN role VARCHAR(50) NOT NULL"
+                        "ALTER TABLE users ALTER COLUMN role VARCHAR(50) NOT NULL"
                     );
                     log.info("SchemaFixer: users.role column converted successfully");
                 }
@@ -49,9 +49,9 @@ public class SchemaFixer implements CommandLineRunner {
                     "UPDATE file_storage SET amount_verified = 0 WHERE amount_verified IS NULL"
                 );
                 if (updated > 0) log.info("SchemaFixer: fixed {} file_storage rows with NULL amount_verified", updated);
-                // Also tighten the column to NOT NULL with default 0
+                // Also tighten the column to NOT NULL
                 conn.createStatement().execute(
-                    "ALTER TABLE file_storage MODIFY COLUMN amount_verified BIT(1) NOT NULL DEFAULT 0"
+                    "ALTER TABLE file_storage ALTER COLUMN amount_verified BIT NOT NULL"
                 );
             }
         }

@@ -76,6 +76,9 @@
       <a href="#" class="nav-item nav-only-admin" data-page="user-mgmt" title="User Management">
         <span class="nav-icon">👥</span><span class="nav-label">User Management</span>
       </a>
+      <a href="#" class="nav-item nav-only-logistic" data-page="exchange-rates" title="Exchange Rates">
+        <span class="nav-icon">💱</span><span class="nav-label">Exchange Rates</span>
+      </a>
     </nav>
     <div class="sidebar-footer">
       <div class="sidebar-footer-actions">
@@ -153,12 +156,14 @@
             <button class="btn btn-outline btn-sm active" id="dashInProgressBtn">In Progress</button>
             <button class="btn btn-outline btn-sm" id="dashCompletedBtn">Completed</button>
             <button class="btn btn-outline btn-sm" id="dashAllBtn">All</button>
+            <button class="btn btn-outline btn-sm" id="dashPendingInvoiceBtn">Pending Invoices</button>
             <button class="btn btn-outline btn-sm" id="dashReadyInvoiceBtn">Ready for Invoice</button>
             <button class="btn btn-outline btn-sm" id="dashReadyDispatchBtn">Ready for Dispatch</button>
             <button class="btn btn-outline btn-sm" id="dashTodaysCollectionBtn">Today's Collection</button>
           </div>
           <button class="btn btn-outline btn-sm" id="toggleStatsBtn" title="Show/hide summary stats">▲ Stats</button>
           <button class="btn btn-outline btn-sm" id="toggleFilterBarBtn">Search / Filter</button>
+          <button class="btn btn-outline btn-sm nav-only-logistic" id="exportDispatchDataBtn">⬇ Export Dispatch Data</button>
           <button class="btn btn-primary nav-only-gm" data-page="create-wo">＋ New Dispatch</button>
         </div>
       </div>
@@ -400,6 +405,32 @@
       </div>
     </section>
 
+    <!-- EXCHANGE RATE CALENDAR (Logistic role) -->
+    <section class="page" id="pageExchangeRates">
+      <div class="page-header">
+        <div>
+          <div class="page-title">💱 Exchange Rate Calendar</div>
+          <div class="page-sub">Enter each day's currency rate once — invoices on that date pick it up automatically</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" id="exRatePrevMonthBtn">‹ Prev</button>
+          <span id="exRateMonthLabel" style="font-weight:600; min-width:130px; text-align:center; display:inline-block"></span>
+          <button class="btn btn-outline btn-sm" id="exRateNextMonthBtn">Next ›</button>
+          <button class="btn btn-primary btn-sm" id="exRateSaveBtn">Save Changes</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-card">
+          <table class="wo-table" id="exRateTable" style="width:100%">
+            <thead><tr>
+              <th>Date</th><th>EURO</th><th>USD</th><th>GBP</th>
+            </tr></thead>
+            <tbody id="exRateTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -566,12 +597,52 @@
           <div class="tally-field" style="grid-column:1/-1">
             <label style="display:flex;align-items:center;gap:10px">
               Party (Tally Exact Name) *
+              <button onclick="toggleNewPartyForm()"
+                style="margin-left:auto;background:#fff3e0;color:#e65100;border:1px solid #ffb74d;border-radius:5px;padding:2px 10px;font-size:.75rem;font-weight:600;cursor:pointer">
+                ➕ New Party
+              </button>
               <button onclick="savePartyToJson()"
-                style="margin-left:auto;background:#e0f7fa;color:#00695c;border:1px solid #80cbc4;border-radius:5px;padding:2px 10px;font-size:.75rem;font-weight:600;cursor:pointer">
+                style="background:#e0f7fa;color:#00695c;border:1px solid #80cbc4;border-radius:5px;padding:2px 10px;font-size:.75rem;font-weight:600;cursor:pointer">
                 💾 Save Party to JSON
               </button>
             </label>
             <input id="tallyPartyName" type="text" class="tally-input">
+          </div>
+          <div id="tallyNewPartyBanner" style="display:none;grid-column:1/-1;padding:8px 12px;background:#fff3e0;border:1px solid #ffb74d;border-radius:6px;color:#e65100;font-size:.82rem;font-weight:600">
+            ⚠ This party is not saved in the system yet — please create it once below (exact Tally name, currency &amp; address). It will be remembered for all future invoices.
+          </div>
+          <div id="tallyNewPartyForm" style="display:none;grid-column:1/-1;border:1px solid var(--border);border-radius:8px;padding:14px;background:var(--surface2)">
+            <div style="font-weight:700;margin-bottom:10px">Create New Party</div>
+            <div class="tally-field">
+              <label>Party Name (must EXACTLY match Tally ledger name) *</label>
+              <input id="npName" type="text" class="tally-input">
+            </div>
+            <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">
+              <div class="tally-field" style="flex:1;min-width:140px">
+                <label>Currency *</label>
+                <select id="npCurrency" class="tally-input">
+                  <option value="DOLLAR">DOLLAR (USD)</option>
+                  <option value="EUR">EURO (€)</option>
+                  <option value="POUND">POUND (GBP)</option>
+                </select>
+              </div>
+              <div class="tally-field" style="flex:1;min-width:140px">
+                <label>Country</label>
+                <input id="npCountry" type="text" class="tally-input" placeholder="e.g. UNITED STATES">
+              </div>
+            </div>
+            <div class="tally-field" style="margin-top:8px">
+              <label>Mailing Name (as printed on invoice — leave blank to use Party Name)</label>
+              <input id="npMailingName" type="text" class="tally-input">
+            </div>
+            <div class="tally-field" style="margin-top:8px">
+              <label>Party Address (one line per row) *</label>
+              <textarea id="npAddress" class="tally-input" rows="4" placeholder="Street / building&#10;City, State ZIP&#10;Country"></textarea>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn-primary btn-sm" onclick="saveNewParty()">💾 Save Party</button>
+              <button class="btn btn-outline btn-sm" onclick="toggleNewPartyForm(false)">Cancel</button>
+            </div>
           </div>
           <div class="tally-field">
             <label>Country of Destination</label>
@@ -697,7 +768,8 @@
           <button class="btn btn-outline" onclick="switchTallyTab(3)">← Back</button>
           <button id="tallySendBtn" class="btn btn-primary" style="background:var(--orange,#e85a24)"
                   onclick="sendTallyInvoice()">🚀 Send to Tally</button>
-          <button id="tallyFolderBtn" class="btn btn-success" onclick="createTallyFolders()">📁 Create Folders</button>
+          <button id="tallyFolderPickBtn" class="btn btn-success" onclick="createTallyFoldersLocal()">📂 Choose Folder &amp; Create PDFs</button>
+          <button id="tallyFolderBtn" class="btn btn-outline" onclick="createTallyFolders()" title="Creates folders on the server at the Main Invoice Folder Path — only useful if that path is a shared/server location">📁 Create on Server Path</button>
         </div>
 
         <div id="tallyResultBox" style="margin-top:14px;display:none;padding:12px;border-radius:6px;font-size:.88rem"></div>

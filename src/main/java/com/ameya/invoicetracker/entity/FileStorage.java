@@ -57,7 +57,7 @@ public class FileStorage {
     @Column
     private Double amountTotal;
 
-    @Column(nullable = false, columnDefinition = "BIT(1) DEFAULT 0")
+    @Column(nullable = false, columnDefinition = "BIT DEFAULT 0")
     @Builder.Default
     private boolean amountVerified = false;
 

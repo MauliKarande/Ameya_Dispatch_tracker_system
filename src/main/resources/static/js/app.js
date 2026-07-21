@@ -298,12 +298,14 @@ function setupUserUI() {
   const isStore       = u.role === 'STORE';
   const isInvoiceCreator = u.role === 'INVOICE_CREATOR';
   const isSalesExec   = u.role === 'SALES_EXECUTIVE';
+  const isLogistic    = u.role === 'LOGISTIC';
 
   // Show/hide nav items by role
   document.querySelectorAll('.nav-only-gm').forEach(el => el.style.display = isGM ? '' : 'none');
   document.querySelectorAll('.nav-only-admin').forEach(el => el.style.display = isAdmin ? '' : 'none');
   document.querySelectorAll('.nav-only-invoice-creator').forEach(el => el.style.display = isInvoiceCreator ? '' : 'none');
   document.querySelectorAll('.nav-only-sales-exec').forEach(el => el.style.display = isSalesExec ? '' : 'none');
+  document.querySelectorAll('.nav-only-logistic').forEach(el => el.style.display = isLogistic ? '' : 'none');
   document.querySelectorAll('.nav-hide-sales-exec').forEach(el => el.style.display = isSalesExec ? 'none' : '');
   // Store Cart visible to Store + General Manager + Sales Executive
   document.querySelectorAll('.nav-store-cart').forEach(el => el.style.display = !isAdmin ? '' : 'none');
@@ -330,7 +332,7 @@ function setupUserUI() {
 }
 
 function roleLabel(role) {
-  const map = { ADMIN:'Admin', GENERAL_MANAGER:'General Manager', STORE:'Store', INVOICE_CREATOR:'Invoice Creator', SALES_EXECUTIVE:'Sales Executive', GUEST:'Guest' };
+  const map = { ADMIN:'Admin', GENERAL_MANAGER:'General Manager', STORE:'Store', INVOICE_CREATOR:'Invoice Creator', SALES_EXECUTIVE:'Sales Executive', GUEST:'Guest', LOGISTIC:'Logistic' };
   return map[role] || role;
 }
 
@@ -368,6 +370,7 @@ function navigateTo(page) {
     'detail':      { pageId:'pageWoDetail',   title:'Dispatch Detail' },
     'user-mgmt':   { pageId:'pageUserMgmt',   title:'User Management' },
     'store-cart':  { pageId:'pageStoreCart',  title:'Store Cart' },
+    'exchange-rates': { pageId:'pageExchangeRates', title:'Exchange Rates' },
   };
   const info = pageMap[page];
   if (!info) return;
@@ -387,6 +390,7 @@ function navigateTo(page) {
   if (page === 'rfd') loadRFDPage();
   if (page === 'user-mgmt') loadUserManagement();
   if (page === 'store-cart') loadStoreCart();
+  if (page === 'exchange-rates') loadExchangeRatesPage();
 }
 
 // ── LOOKUP DATA ────────────────────────────────────────────────────
@@ -511,12 +515,17 @@ function bindDashboardControls() {
     };
   }
 
-  const viewBtnIds = ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn', 'dashReadyInvoiceBtn', 'dashReadyDispatchBtn', 'dashTodaysCollectionBtn'];
+  const exportBtn = id('exportDispatchDataBtn');
+  if (exportBtn) exportBtn.onclick = openExportDispatchDataModal;
+
+  const viewBtnIds = ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn', 'dashPendingInvoiceBtn', 'dashReadyInvoiceBtn', 'dashReadyDispatchBtn', 'dashTodaysCollectionBtn'];
   viewBtnIds.forEach(btnId => {
     const btn = id(btnId);
     if (!btn) return;
     btn.onclick = () => {
-      if (btnId === 'dashReadyInvoiceBtn') {
+      if (btnId === 'dashPendingInvoiceBtn') {
+        State.dashboardView = 'PENDING_INVOICE';
+      } else if (btnId === 'dashReadyInvoiceBtn') {
         State.dashboardView = 'READY_INVOICE';
       } else if (btnId === 'dashReadyDispatchBtn') {
         State.dashboardView = 'READY_DISPATCH';
@@ -563,6 +572,9 @@ function getDashboardVisibleList() {
 function getDashboardBaseList(list) {
   if (State.dashboardView === 'COMPLETED') return list.filter(w => w.status === 'COMPLETED');
   if (State.dashboardView === 'ALL') return list;
+  if (State.dashboardView === 'PENDING_INVOICE') return list.filter(w =>
+    w.stockStatus === 'PENDING' || w.packagingStatus === 'PENDING'
+  );
   if (State.dashboardView === 'READY_INVOICE') return list.filter(w =>
     w.stockStatus === 'DONE' && w.packagingStatus === 'DONE' && w.invoiceStatus === 'PENDING'
   );
@@ -2563,6 +2575,198 @@ function closeModal() {
   id('modal').style.display = 'none';
 }
 
+// ── EXPORT DISPATCH DATA (Logistic role) ──────────────────────────
+function openExportDispatchDataModal() {
+  const today = new Date().toISOString().slice(0, 10);
+  const bodyHtml = `
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <label>Start Date <input type="date" id="exportStartDate" class="filter-select" style="width:100%"></label>
+      <label>End Date <input type="date" id="exportEndDate" class="filter-select" style="width:100%" value="${today}"></label>
+    </div>`;
+  showModal('Export Dispatch Data', bodyHtml, [
+    { label: 'Cancel', cls: 'btn-outline', close: true },
+    { label: 'Continue', cls: 'btn-primary', id: 'exportContinueBtn' },
+  ]);
+  id('exportContinueBtn').onclick = async () => {
+    const startDate = getVal('exportStartDate');
+    const endDate = getVal('exportEndDate');
+    if (!startDate || !endDate) { showToast('Please pick both dates', 'error'); return; }
+    await runExportCheck(startDate, endDate);
+  };
+}
+
+async function runExportCheck(startDate, endDate) {
+  try {
+    const res = await api(`/api/export/dispatch-data/check?startDate=${startDate}&endDate=${endDate}`, 'GET');
+    const { ready, missingPairs } = res.data;
+    if (ready) {
+      await triggerExportDownload(startDate, endDate);
+    } else {
+      showRateBackfillModal(startDate, endDate, missingPairs);
+    }
+  } catch (e) {
+    showToast('Export check failed: ' + e.message, 'error');
+  }
+}
+
+// missingPairs: [{date, currency}] — currency is always derived per-party
+// (never a user choice), so each row only ever asks for the rate.
+function showRateBackfillModal(startDate, endDate, missingPairs) {
+  const rowsHtml = missingPairs.map((p, i) => `
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+      <span style="min-width:90px">${formatDate(p.date)}</span>
+      <span style="min-width:50px; font-weight:600">${esc(p.currency)}</span>
+      <input type="number" step="0.0001" class="filter-select rate-value" data-idx="${i}" placeholder="Rate" style="width:100px">
+    </div>`).join('');
+  const bodyHtml = `
+    <p style="margin-bottom:10px; color:var(--text2); font-size:.85rem;">
+      These invoice dates need a rate for the currency shown (derived automatically from each
+      party) — enter it once from your email records and it'll be saved so you won't be asked again.
+    </p>
+    ${rowsHtml}`;
+  showModal('Enter Missing Exchange Rates', bodyHtml, [
+    { label: 'Cancel', cls: 'btn-outline', close: true },
+    { label: 'Save & Continue', cls: 'btn-primary', id: 'exportSaveRatesBtn' },
+  ], { wide: true });
+
+  id('exportSaveRatesBtn').onclick = async () => {
+    const rates = missingPairs.map((p, i) => ({
+      date: p.date,
+      currency: p.currency,
+      rate: parseFloat(document.querySelector(`.rate-value[data-idx="${i}"]`).value),
+    }));
+    if (rates.some(r => !r.rate || isNaN(r.rate))) {
+      showToast('Please enter a rate for every row', 'error');
+      return;
+    }
+    try {
+      await api('/api/export/dispatch-data/rates', 'POST', { rates });
+      showToast('Rates saved', 'success');
+      await runExportCheck(startDate, endDate);
+    } catch (e) {
+      showToast('Failed to save rates: ' + e.message, 'error');
+    }
+  };
+}
+
+// Streams the download with a real byte-progress bar shown inline in the same
+// modal (no new tab/page), then triggers the browser save via a Blob.
+async function triggerExportDownload(startDate, endDate) {
+  showModal('Exporting Dispatch Data', `
+    <div style="padding:6px 0 2px">
+      <div style="background:var(--surface2); border-radius:6px; overflow:hidden; height:18px; border:1px solid var(--border)">
+        <div id="exportProgressBar" style="background:var(--blue-600); height:100%; width:0%; transition:width .15s;"></div>
+      </div>
+      <div id="exportProgressLabel" style="text-align:center; margin-top:10px; font-size:.85rem; color:var(--text2)">Generating file…</div>
+    </div>`, []);
+
+  try {
+    const url = `/api/export/dispatch-data/download?startDate=${startDate}&endDate=${endDate}`;
+    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${State.token}` } });
+    if (!res.ok) throw new Error(`Server error (${res.status})`);
+
+    const total = parseInt(res.headers.get('Content-Length') || '0', 10);
+    const reader = res.body.getReader();
+    const chunks = [];
+    let received = 0;
+    const bar = id('exportProgressBar');
+    const label = id('exportProgressLabel');
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      if (total) {
+        const pct = Math.round((received / total) * 100);
+        if (bar) bar.style.width = pct + '%';
+        if (label) label.textContent = `Downloading… ${pct}%`;
+      } else if (label) {
+        label.textContent = `Downloading… ${(received / 1024).toFixed(0)} KB`;
+      }
+    }
+    if (bar) bar.style.width = '100%';
+
+    const blob = new Blob(chunks, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `Export Dispatch Data ${startDate} to ${endDate}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+
+    closeModal();
+    showToast('Export downloaded', 'success');
+  } catch (e) {
+    closeModal();
+    showToast('Export failed: ' + e.message, 'error');
+  }
+}
+
+// ── EXCHANGE RATE CALENDAR (Logistic role) ────────────────────────
+let _exRateYear = null;
+let _exRateMonth = null; // 1-based
+
+function loadExchangeRatesPage() {
+  if (!_exRateYear) {
+    const now = new Date();
+    _exRateYear = now.getFullYear();
+    _exRateMonth = now.getMonth() + 1;
+  }
+  bindExchangeRateControls();
+  renderExchangeRateMonth();
+}
+
+function bindExchangeRateControls() {
+  id('exRatePrevMonthBtn').onclick = () => shiftExchangeRateMonth(-1);
+  id('exRateNextMonthBtn').onclick = () => shiftExchangeRateMonth(1);
+  id('exRateSaveBtn').onclick = saveExchangeRateChanges;
+}
+
+function shiftExchangeRateMonth(delta) {
+  _exRateMonth += delta;
+  if (_exRateMonth < 1) { _exRateMonth = 12; _exRateYear--; }
+  if (_exRateMonth > 12) { _exRateMonth = 1; _exRateYear++; }
+  renderExchangeRateMonth();
+}
+
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+async function renderExchangeRateMonth() {
+  id('exRateMonthLabel').textContent = `${MONTHS_FULL[_exRateMonth - 1]} ${_exRateYear}`;
+  const tbody = id('exRateTableBody');
+  tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text3)">Loading…</td></tr>`;
+  try {
+    const res = await api(`/api/exchange-rates/month?year=${_exRateYear}&month=${_exRateMonth}`, 'GET');
+    const { currencies, days } = res.data;
+    tbody.innerHTML = days.map(d => {
+      const cells = currencies.map(c =>
+        `<td><input type="number" step="0.0001" class="filter-select ex-rate-input" data-date="${d.date}" data-currency="${c}" value="${d.rates[c] ?? ''}" style="width:100px"></td>`
+      ).join('');
+      return `<tr><td>${formatDate(d.date)}</td>${cells}</tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--red)">Failed to load: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function saveExchangeRateChanges() {
+  const rates = [];
+  document.querySelectorAll('.ex-rate-input').forEach(inp => {
+    const val = inp.value.trim();
+    if (val !== '') rates.push({ date: inp.dataset.date, currency: inp.dataset.currency, rate: parseFloat(val) });
+  });
+  if (!rates.length) { showToast('No rates entered', 'error'); return; }
+  try {
+    await api('/api/exchange-rates', 'POST', { rates });
+    showToast('Exchange rates saved', 'success');
+  } catch (e) {
+    showToast('Failed to save: ' + e.message, 'error');
+  }
+}
+
 // ── FILE DROP ──────────────────────────────────────────────────────
 function setupFileDrop(dropZoneId, fileInputId, fileNameId, accept) {
   const dropZone = id(dropZoneId);
@@ -3143,7 +3347,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── USER MANAGEMENT ────────────────────────────────────────────────
-const ALL_ROLES = ['ADMIN','GENERAL_MANAGER','STORE','INVOICE_CREATOR','SALES_EXECUTIVE','GUEST'];
+const ALL_ROLES = ['ADMIN','GENERAL_MANAGER','STORE','INVOICE_CREATOR','SALES_EXECUTIVE','GUEST','LOGISTIC'];
 
 async function loadUserManagement() {
   const tbody = id('userTableBody');
@@ -3620,6 +3824,16 @@ async function openTallyModal(wo) {
       if (preview) preview.textContent = (d.mailingName ? d.mailingName + '\n' : '') + d.addressLines.join('\n');
     }
 
+    // Unknown party → prompt to create it once (name/currency/address)
+    const npBanner = id('tallyNewPartyBanner');
+    if (d.partyKnown === false) {
+      if (npBanner) npBanner.style.display = 'block';
+      toggleNewPartyForm(true);
+    } else {
+      if (npBanner) npBanner.style.display = 'none';
+      toggleNewPartyForm(false);
+    }
+
     // Status line
     if (State.tallyParts.length === 0 && !d.excelFileId) {
       if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = '⚠ ' + (d.parseError || 'No Excel file uploaded'); }
@@ -3966,6 +4180,46 @@ function applyTallyRateForCurrency(currKey) {
   if (rate) setVal('tallyExRate', rate);
 }
 
+// ── NEW PARTY (create once: exact Tally name + currency + address) ──
+function toggleNewPartyForm(show) {
+  const form = id('tallyNewPartyForm');
+  if (!form) return;
+  const willShow = show === undefined ? form.style.display === 'none' : !!show;
+  form.style.display = willShow ? 'block' : 'none';
+  if (willShow) {
+    // Prefill from what the modal already knows
+    if (!getVal('npName')) setVal('npName', getVal('tallyPartyName') || State.tallyCurrentWo?.customerName || '');
+    if (!getVal('npCountry')) setVal('npCountry', getVal('tallyPartyCountry') || '');
+    const sel = id('npCurrency');
+    if (sel) sel.value = getSelectedTallyCurr() || 'DOLLAR';
+  }
+}
+
+async function saveNewParty() {
+  const partyName = getVal('npName').trim();
+  const addressLines = getVal('npAddress').split('\n').map(l => l.trim()).filter(Boolean);
+  if (!partyName) { showToast('Party name is required', 'error'); return; }
+  if (!addressLines.length) { showToast('Please enter the party address', 'error'); return; }
+
+  try {
+    await api('/api/tally/create-party', 'POST', {
+      partyName,
+      currency: getVal('npCurrency') || 'DOLLAR',
+      country: getVal('npCountry').trim(),
+      mailingName: getVal('npMailingName').trim(),
+      addressLines,
+    });
+    showToast(`Party "${partyName}" saved`, 'success');
+    toggleNewPartyForm(false);
+    const npBanner = id('tallyNewPartyBanner');
+    if (npBanner) npBanner.style.display = 'none';
+    // Re-run the modal prefill so name/currency/address flow into the invoice being created
+    if (State.tallyCurrentWo) await openTallyModal(State.tallyCurrentWo);
+  } catch (e) {
+    showToast('Failed to save party: ' + e.message, 'error');
+  }
+}
+
 async function savePartyToJson() {
   const req = collectTallyRequest();
   if (!req.partyTally) { showToast('Party name is required', 'error'); return; }
@@ -4099,6 +4353,7 @@ function buildTallyReview() {
 function collectTallyRequest() {
   const mode = document.querySelector('input[name="tallyMode"]:checked')?.value || 'AIR';
   return {
+    workOrderId: State.tallyWoId,
     parts: State.tallyParts.filter(p => !p.deleted),
     voucherNumber: getVal('tallyVoucherNo'),
     voucherDate: getVal('tallyVoucherDate').replace(/-/g, ''),
@@ -4168,12 +4423,68 @@ async function createTallyFolders() {
     const res = await api('/api/tally/create-folders', 'POST', req);
     const d = res.data;
     const ok = d.status === 'OK';
-    showTallyResult(ok ? '✓ Folders created:\n' + (d.folderPath || '') : '✗ ' + (d.message || 'Unknown error'), ok);
-    showToast(ok ? 'Invoice folders created' : 'Folder creation failed', ok ? 'success' : 'error');
+    showTallyResult(ok ? '✓ Folders created ON THE SERVER at:\n' + (d.folderPath || '')
+                       + '\n(To create them on this computer instead, use "Choose Folder & Create PDFs")'
+                       : '✗ ' + (d.message || 'Unknown error'), ok);
+    showToast(ok ? 'Invoice folders created on server' : 'Folder creation failed', ok ? 'success' : 'error');
   } catch (e) {
     showTallyResult('✗ ' + e.message, false);
     showToast('Folder creation failed: ' + e.message, 'error');
   }
+}
+
+// Creates the invoice folder + 3 blank PDFs directly on THIS computer via the
+// browser's directory picker. Needed since the app moved to the server — the
+// old server-side path (C:/Users/Rohit.S/Desktop/...) now points at the
+// server's own disk, invisible to the person creating the invoice.
+async function createTallyFoldersLocal() {
+  const req = collectTallyRequest();
+  if (!req.voucherNumber) { showToast('Voucher number is required', 'error'); return; }
+  if (!window.showDirectoryPicker) {
+    showTallyResult('✗ Folder picker not supported in this browser. Please use Chrome or Edge.', false);
+    return;
+  }
+
+  // Mirror the server's folder/file naming exactly
+  const party = (req.partyTally || '').toUpperCase().replace(/[\\/:*?"<>|]/g, '_');
+  const mode  = (req.airSea || 'AIR').toUpperCase();
+  const base  = `${req.voucherNumber} ${party} ${mode}`;
+  const folderName = `INV ${base}`;
+  const pdfNames = [
+    `INV ${base}.pdf`,
+    `PACKAGING LIST INV ${base}.pdf`,
+    `TAX INV ${base}.pdf`,
+  ];
+
+  try {
+    const rootDir = await window.showDirectoryPicker({ mode: 'readwrite' });
+    const invDir = await rootDir.getDirectoryHandle(folderName, { create: true });
+    const blankPdf = blankPdfBytes();
+    for (const name of pdfNames) {
+      const fh = await invDir.getFileHandle(name, { create: true });
+      const existing = await fh.getFile();
+      if (existing.size > 0) continue; // never overwrite a real PDF already saved there
+      const w = await fh.createWritable();
+      await w.write(blankPdf);
+      await w.close();
+    }
+    showTallyResult(`✓ Created in "${rootDir.name}":\n${folderName}\n  - ${pdfNames.join('\n  - ')}`, true);
+    showToast('Invoice folder & PDFs created', 'success');
+  } catch (e) {
+    if (e.name === 'AbortError') return; // user cancelled the picker — not an error
+    showTallyResult('✗ ' + e.message, false);
+    showToast('Folder creation failed: ' + e.message, 'error');
+  }
+}
+
+// Same minimal blank PDF the server generates (TallyInvoiceService.blankPdfBytes)
+function blankPdfBytes() {
+  const pdf = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n' +
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n' +
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>\nendobj\n' +
+    'xref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n' +
+    '0000000115 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n204\n%%EOF';
+  return new TextEncoder().encode(pdf);
 }
 
 async function onTallyModeChange() {
