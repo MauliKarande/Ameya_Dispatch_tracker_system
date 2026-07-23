@@ -256,6 +256,36 @@ public class TallyCustomDataService {
         return null;
     }
 
+    /**
+     * Caches an address fetched live from Tally's own ledger master (see
+     * TallyInvoiceService.fetchLedgerAddressFromTally) so future invoices for this
+     * party don't need to re-query Tally. Best-effort: failures are logged, not thrown,
+     * since this is only a cache write and must never block invoice creation.
+     */
+    public void cacheAddress(String partyName, String mailingName, List<String> addressLines, String country) {
+        if (partyName == null || partyName.isBlank() || addressLines == null || addressLines.isEmpty()) return;
+        try {
+            File f = Paths.get(customDataPath).toFile();
+            ObjectNode root = (ObjectNode) (f.exists() ? mapper.readTree(f) : mapper.createObjectNode());
+            if (!root.has("addresses") || !root.get("addresses").isObject())
+                root.set("addresses", mapper.createObjectNode());
+            ObjectNode addrRoot = (ObjectNode) root.get("addresses");
+            ObjectNode entry = mapper.createObjectNode();
+            entry.put("mailing_name", mailingName != null && !mailingName.isBlank() ? mailingName : partyName);
+            entry.put("country", country != null ? country : "");
+            var linesArr = mapper.createArrayNode();
+            addressLines.forEach(linesArr::add);
+            entry.set("address_lines", linesArr);
+            addrRoot.set(partyName, entry);
+
+            mapper.writerWithDefaultPrettyPrinter().writeValue(f, root);
+            this.root = root;
+            log.info("Cached ledger address for '{}' fetched live from Tally", partyName);
+        } catch (Exception e) {
+            log.warn("Failed to cache ledger address for '{}': {}", partyName, e.getMessage());
+        }
+    }
+
     public Map<String, String> getDualAddress(String partyName) {
         if (partyName == null) return null;
         JsonNode node = root.path("party_dual_address").path(partyName);

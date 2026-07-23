@@ -81,14 +81,27 @@ public class TallyInvoiceController {
 
         // --- Address ---
         Map<String, Object> addr = customData.getAddress(tallyName);
-        if (addr != null) {
+        @SuppressWarnings("unchecked")
+        List<String> savedLines = addr != null ? (List<String>) addr.getOrDefault("address_lines", List.of()) : List.of();
+        if (addr != null && !savedLines.isEmpty()) {
             dto.setMailingName((String) addr.getOrDefault("mailing_name", tallyName));
-            @SuppressWarnings("unchecked")
-            List<String> lines = (List<String>) addr.getOrDefault("address_lines", List.of());
-            dto.setAddressLines(lines);
+            dto.setAddressLines(savedLines);
         } else {
-            dto.setMailingName(tallyName);
-            dto.setAddressLines(List.of());
+            // No saved address on file — try fetching it live from Tally's own ledger master
+            // (long-standing customers often have it there even though it was never re-entered
+            // into ameya_custom_data.json), and cache it for next time.
+            Map<String, Object> live = tallyService.fetchLedgerAddressFromTally(tallyName, null);
+            @SuppressWarnings("unchecked")
+            List<String> liveLines = live != null ? (List<String>) live.get("address_lines") : null;
+            if (liveLines != null && !liveLines.isEmpty()) {
+                String liveMailingName = (String) live.getOrDefault("mailing_name", tallyName);
+                dto.setMailingName(liveMailingName);
+                dto.setAddressLines(liveLines);
+                customData.cacheAddress(tallyName, liveMailingName, liveLines, (String) live.getOrDefault("country", ""));
+            } else {
+                dto.setMailingName(tallyName);
+                dto.setAddressLines(List.of());
+            }
         }
 
         // --- Voucher number ---

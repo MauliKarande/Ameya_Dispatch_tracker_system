@@ -46,8 +46,26 @@ public class TallyInvoiceService {
         if (parts == null || parts.isEmpty()) return "ERROR: No parts in request";
 
         Map<String, Object> addr = customData.getAddress(req.getPartyTally());
+        @SuppressWarnings("unchecked")
         List<String> addrLines = addr != null ? (List<String>) addr.get("address_lines") : List.of();
         String mailingName = addr != null ? (String) addr.getOrDefault("mailing_name", req.getPartyTally()) : req.getPartyTally();
+
+        // No saved address on file (e.g. a party never manually added to ameya_custom_data.json) —
+        // fetch it live from Tally's own ledger master, same as the Python script did, so the
+        // Buyer/Consignee address still reaches Tally instead of going out blank.
+        if (addrLines == null || addrLines.isEmpty()) {
+            Map<String, Object> live = fetchLedgerAddressFromTally(req.getPartyTally(), req.getTallyServer());
+            if (live != null) {
+                @SuppressWarnings("unchecked")
+                List<String> liveLines = (List<String>) live.get("address_lines");
+                if (liveLines != null && !liveLines.isEmpty()) {
+                    addrLines = liveLines;
+                    mailingName = (String) live.getOrDefault("mailing_name", mailingName);
+                    customData.cacheAddress(req.getPartyTally(), mailingName, addrLines,
+                            (String) live.getOrDefault("country", ""));
+                }
+            }
+        }
 
         String xml = buildXml(parts, req, addrLines, mailingName);
         String url = resolveTallyUrl(req.getTallyServer());
@@ -73,6 +91,124 @@ public class TallyInvoiceService {
             log.error("Tally connection error: {}", e.getMessage());
             return "ERROR: " + e.getMessage();
         }
+    }
+
+    // ── Fetch a party ledger's address live from Tally (mirrors Python's fetch_ledger_address) ──
+    // Used as a fallback when ameya_custom_data.json has no saved address for the party, so
+    // long-standing Tally customers whose address only lives in the Tally ledger master
+    // (never manually re-entered into our JSON store) still get it sent on the voucher.
+    public Map<String, Object> fetchLedgerAddressFromTally(String partyName, String tallyServerOverride) {
+        String url = resolveTallyUrl(tallyServerOverride);
+        try {
+            String xml = String.format("""
+                    <ENVELOPE>
+                     <HEADER>
+                      <VERSION>1</VERSION>
+                      <TALLYREQUEST>EXPORT</TALLYREQUEST>
+                      <TYPE>COLLECTION</TYPE>
+                      <ID>AddrLookup</ID>
+                     </HEADER>
+                     <BODY>
+                      <DESC>
+                       <STATICVARIABLES>
+                        <SVCURRENTCOMPANY>%s</SVCURRENTCOMPANY>
+                        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+                       </STATICVARIABLES>
+                       <TDL>
+                        <TDLMESSAGE>
+                         <COLLECTION NAME="AddrLookup" ISMODIFY="No">
+                          <TYPE>Ledger</TYPE>
+                          <FILTER>AddrFilter</FILTER>
+                          <FETCH>NAME, MAILINGNAME, ADDRESS, PINCODE, COUNTRYOFRESIDENCE, LEDSTATENAME, GSTREGISTRATIONNUMBER</FETCH>
+                         </COLLECTION>
+                         <SYSTEM TYPE="Formulae" NAME="AddrFilter">$Name = "%s"</SYSTEM>
+                        </TDLMESSAGE>
+                       </TDL>
+                      </DESC>
+                     </BODY>
+                    </ENVELOPE>""", escXml(companyName), escXml(partyName));
+
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
+            HttpRequest httpReq = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/xml")
+                    .POST(HttpRequest.BodyPublishers.ofString(xml, StandardCharsets.UTF_8))
+                    .timeout(Duration.ofSeconds(15)).build();
+            String body = client.send(httpReq, HttpResponse.BodyHandlers.ofString()).body();
+            Map<String, Object> result = parseLedgerAddressXml(body, partyName);
+            if (result != null) log.info("Fetched live ledger address from Tally for '{}'", partyName);
+            else log.warn("No ledger address found in Tally for '{}'", partyName);
+            return result;
+        } catch (Exception e) {
+            log.warn("Ledger address fetch failed for '{}': {}", partyName, e.getMessage());
+            return null;
+        }
+    }
+
+    private Map<String, Object> parseLedgerAddressXml(String xml, String partyName) {
+        if (xml == null || xml.isBlank()) return null;
+        String norm = normaliseForMatch(partyName);
+        // [^>]*? (lazy) + a required \s before NAME= keeps this from matching RESERVEDNAME=""
+        // (its trailing "NAME=" would otherwise win under greedy backtracking since RESERVEDNAME
+        // contains "NAME" as a substring).
+        Matcher ledgerMatcher = Pattern.compile(
+                "<LEDGER[^>]*?\\sNAME=\"([^\"]*)\"[^>]*>(.*?)</LEDGER>",
+                Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(xml);
+        while (ledgerMatcher.find()) {
+            if (!normaliseForMatch(ledgerMatcher.group(1)).equals(norm)) continue;
+            String block = ledgerMatcher.group(2);
+
+            List<String> addressLines = new ArrayList<>();
+            Matcher addrListM = Pattern.compile("<ADDRESS\\.LIST[^>]*>(.*?)</ADDRESS\\.LIST>", Pattern.DOTALL).matcher(block);
+            String addrSource = addrListM.find() ? addrListM.group(1) : block;
+            Matcher lineM = Pattern.compile("<ADDRESS[^>]*>(.*?)</ADDRESS>", Pattern.DOTALL).matcher(addrSource);
+            while (lineM.find()) {
+                // Tally sometimes packs a CR/LF pair inside a single <ADDRESS> entry —
+                // split those back out into separate lines.
+                String raw = unescapeXml(lineM.group(1));
+                for (String part : raw.split("\\r?\\n")) {
+                    String line = part.strip();
+                    if (!line.isEmpty()) addressLines.add(line);
+                }
+            }
+
+            String mailingName = firstTagValue(block, "MAILINGNAME");
+            if (mailingName.isEmpty()) mailingName = firstTagValue(block, "LEDMAILINGNAME");
+            String gstin = firstTagValue(block, "GSTREGISTRATIONNUMBER");
+            String country = firstTagValue(block, "COUNTRYOFRESIDENCE");
+            if (country.isEmpty()) country = firstTagValue(block, "COUNTRYNAME");
+            String pincode = firstTagValue(block, "PINCODE");
+            String state = firstTagValue(block, "LEDSTATENAME");
+            if (state.isEmpty()) state = firstTagValue(block, "STATENAME");
+
+            if (addressLines.isEmpty() && mailingName.isEmpty() && gstin.isEmpty()) return null;
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("mailing_name", !mailingName.isEmpty() ? mailingName : partyName);
+            result.put("address_lines", addressLines);
+            result.put("country", country);
+            result.put("pincode", pincode);
+            result.put("state", state);
+            result.put("gstin", gstin);
+            return result;
+        }
+        return null;
+    }
+
+    private String firstTagValue(String block, String tag) {
+        Matcher m = Pattern.compile("<" + tag + "[^>]*>(.*?)</" + tag + ">", Pattern.DOTALL).matcher(block);
+        return m.find() ? unescapeXml(m.group(1)).strip() : "";
+    }
+
+    private static String unescapeXml(String s) {
+        if (s == null) return "";
+        return s.replace("&#13;", "\r").replace("&#10;", "\n")
+                .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", "\"").replace("&apos;", "'");
+    }
+
+    private static String normaliseForMatch(String s) {
+        return s == null ? "" : s.toLowerCase().replaceAll("[^a-z0-9]", "");
     }
 
     // ── Compute invoice totals (currency/rate/amounts) for persistence ───
@@ -269,6 +405,10 @@ public class TallyInvoiceService {
                 "MAHARASHTRA, INDIA"));
         String buyerAddrBlock = addrListXml("BASICBUYERADDRESS",
                 !buyerAddr.isEmpty() ? List.of(buyerAddr) : addrLines);
+        // Consignee (Ship To) mirrors the party's own address — mirrors Python's build_xml,
+        // which is the proven-working reference for populating this field in Tally's Party Details screen
+        String consigneeMname = mailingName;
+        String consigneeAddrBlock = addrListXml("UDF:PROFINVCONGADDSTO", addrLines);
 
         // Inventory entries
         StringBuilder invXml = new StringBuilder();
@@ -375,6 +515,7 @@ public class TallyInvoiceService {
                     <BASICBUYERNAME>%s</BASICBUYERNAME>
                     <REFERENCE>%s</REFERENCE>
                     <PARTYMAILINGNAME>%s</PARTYMAILINGNAME>
+                    <CONSIGNEEMAILINGNAME>%s</CONSIGNEEMAILINGNAME>
                     <DISPATCHFROMNAME>AMEYA PRECISION ENGINEERS LIMITED</DISPATCHFROMNAME>
                     <DISPATCHFROMSTATENAME>Maharashtra</DISPATCHFROMSTATENAME>
                     <DISPATCHFROMPINCODE>412205</DISPATCHFROMPINCODE>
@@ -386,6 +527,9 @@ public class TallyInvoiceService {
                     <CMPGSTSTATE>Maharashtra</CMPGSTSTATE>
                     <GSTREGISTRATIONTYPE>&#4; Unknown</GSTREGISTRATIONTYPE>
                     <PARTYCOUNTRY>%s</PARTYCOUNTRY>
+                    <CONSIGNEEPINCODE>400099</CONSIGNEEPINCODE>
+                    <CONSIGNEESTATENAME>Maharashtra</CONSIGNEESTATENAME>
+                    <CONSIGNEECOUNTRYNAME>India</CONSIGNEECOUNTRYNAME>
                     <BASICDUEDATEOFPYMT>60 Days</BASICDUEDATEOFPYMT>
                     <ISINVOICE>Yes</ISINVOICE><PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
                     <VCHENTRYMODE>Item Invoice</VCHENTRYMODE>
@@ -411,6 +555,10 @@ public class TallyInvoiceService {
                     <UDF:PROFINVSELTERMS.LIST DESC="`PROFINVSelTerms`" ISLIST="YES" TYPE="String" INDEX="8001">
                      <UDF:PROFINVSELTERMS DESC="`PROFINVSelTerms`">%s</UDF:PROFINVSELTERMS>
                     </UDF:PROFINVSELTERMS.LIST>
+                    <UDF:PROFINVCONGNAMESTO.LIST DESC="`PROFINVCONGNAMESTO`" ISLIST="YES" TYPE="String" INDEX="8002">
+                     <UDF:PROFINVCONGNAMESTO DESC="`PROFINVCONGNAMESTO`">%s</UDF:PROFINVCONGNAMESTO>
+                    </UDF:PROFINVCONGNAMESTO.LIST>
+                %s
                     <UDF:PROFINVBUYNAMESTO.LIST DESC="`PROFINVBUYNAMESTO`" ISLIST="YES" TYPE="String" INDEX="8004">
                      <UDF:PROFINVBUYNAMESTO DESC="`PROFINVBUYNAMESTO`">%s</UDF:PROFINVBUYNAMESTO>
                     </UDF:PROFINVBUYNAMESTO.LIST>
@@ -460,12 +608,13 @@ public class TallyInvoiceService {
                 companyName,
                 addrBlock, dispAddrBlock, buyerAddrBlock,
                 vd, vd, partyCountry, party, party, vn,
-                escXml(basicBuyerName), vn, escXml(mailingName),
+                escXml(basicBuyerName), vn, escXml(mailingName), escXml(consigneeMname),
                 nvl(req.getCountryDest()), partyCountry,
                 invXml,
                 party, curr, tf, ex, curr, ti, vn, curr, tf, ex, curr, ti,
                 ex, curr,
                 escXml(nvl(req.getTerms())),
+                escXml(consigneeMname), consigneeAddrBlock,
                 escXml(basicBuyerName),
                 escXml(!buyerAddr.isEmpty() ? buyerAddr : String.join("; ", addrLines)),
                 mode,
