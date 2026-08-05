@@ -518,6 +518,9 @@ function bindDashboardControls() {
   const exportBtn = id('exportDispatchDataBtn');
   if (exportBtn) exportBtn.onclick = openExportDispatchDataModal;
 
+  const exportIssuesBtn = id('exportIssuesBtn');
+  if (exportIssuesBtn) exportIssuesBtn.onclick = openExportIssuesModal;
+
   const viewBtnIds = ['dashInProgressBtn', 'dashCompletedBtn', 'dashAllBtn', 'dashPendingInvoiceBtn', 'dashReadyInvoiceBtn', 'dashReadyDispatchBtn', 'dashTodaysCollectionBtn'];
   viewBtnIds.forEach(btnId => {
     const btn = id(btnId);
@@ -2705,6 +2708,45 @@ async function triggerExportDownload(startDate, endDate) {
   }
 }
 
+// ── Export Issues (Invoice Creator) ─────────────────────────────────
+// Month-filtered export of dispatches with a recorded invoice issue
+// (No PO / Rate Mismatch / etc.), in either CSV or PDF.
+function openExportIssuesModal() {
+  const now = new Date();
+  const curMonth = now.getMonth() + 1;
+  const curYear = now.getFullYear();
+  const monthOptions = MONTHS_FULL.map((m, i) =>
+    `<option value="${i + 1}" ${i + 1 === curMonth ? 'selected' : ''}>${m}</option>`).join('');
+  const yearOptions = Array.from({ length: 4 }, (_, i) => curYear - i)
+    .map(y => `<option value="${y}" ${y === curYear ? 'selected' : ''}>${y}</option>`).join('');
+
+  showModal('Export Issues', `
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <label>Month
+        <select id="issueExportMonth" class="filter-select" style="width:100%">${monthOptions}</select>
+      </label>
+      <label>Year
+        <select id="issueExportYear" class="filter-select" style="width:100%">${yearOptions}</select>
+      </label>
+    </div>`, [
+    { label: 'Cancel', cls: 'btn-outline', close: true },
+    { label: '⬇ CSV', cls: 'btn-outline', id: 'issueExportCsvBtn' },
+    { label: '⬇ PDF', cls: 'btn-primary', id: 'issueExportPdfBtn' },
+  ]);
+
+  const doExport = (format) => {
+    const month = getVal('issueExportMonth');
+    const year = getVal('issueExportYear');
+    const url = `/api/export/issues/${format}?year=${year}&month=${month}&token=${State.token}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.click();
+    closeModal();
+  };
+  id('issueExportCsvBtn').onclick = () => doExport('csv');
+  id('issueExportPdfBtn').onclick = () => doExport('pdf');
+}
+
 // ── EXCHANGE RATE CALENDAR (Logistic role) ────────────────────────
 let _exRateYear = null;
 let _exRateMonth = null; // 1-based
@@ -3169,20 +3211,30 @@ async function viewExcelInvoice(fileId, fileName) {
     const { dataStartRow, colMap } = found;
     const ORDER = ['po','customer','sr','part','qty','rate','despQty','despAmt'];
     const presentKeys = ORDER.filter(k => k in colMap);
+    // W.O. NO. isn't an Excel column — it's this dispatch's own number, shown as a
+    // constant column right after PART NO. for every row in the sheet.
+    const partIdx = presentKeys.indexOf('part');
+    const woInsertIdx = partIdx >= 0 ? partIdx + 1 : presentKeys.length;
+    const woNumber = State.currentWo?.woNumber || '';
     colLabels = presentKeys.map(k => targets_labels[k]);
+    colLabels.splice(woInsertIdx, 0, targets_labels.wo);
     // Same as renderExcelSheet: skip hidden rows
     const rowHidden = ws['!rows'] || [];
-    amtColIdx = presentKeys.indexOf('despAmt');
+    const excelAmtIdx = presentKeys.indexOf('despAmt');
+    amtColIdx = colLabels.indexOf(targets_labels.despAmt);
 
     // Collect rows — same hidden-row logic as View; additionally filter by despAmt
     for (let r = dataStartRow; r <= range.e.r; r++) {
       if (rowHidden[r]?.hidden) continue;
-      const vals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
+      const excelVals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
       // Use _isDash to handle hyphen, en-dash, em-dash, Unicode minus, empty
-      const amtVal = amtColIdx >= 0 ? vals[amtColIdx] : '';
+      const amtVal = excelAmtIdx >= 0 ? excelVals[excelAmtIdx] : '';
       if (_isDash(amtVal) || amtVal === '0') continue;
+      const vals = [...excelVals];
+      vals.splice(woInsertIdx, 0, woNumber);
       // Subtotal/total row: only DESP. AMT. filled — keep the last one to show at bottom
-      if (vals.filter(v => v).length < 2) { excelTotalRow = vals; continue; }
+      // (checked against the Excel-derived values only, since W.O. NO. is always filled)
+      if (excelVals.filter(v => v).length < 2) { excelTotalRow = vals; continue; }
       invoiceRows.push(vals);
     }
 
@@ -3336,7 +3388,7 @@ async function viewExcelInvoice(fileId, fileName) {
 
 // Column labels lookup used inside viewExcelInvoice
 const targets_labels = {
-  po: 'P.O.NO.', customer: 'CUSTOMER', sr: 'SR. NO.', part: 'PART NO.',
+  po: 'P.O.NO.', customer: 'CUSTOMER', sr: 'SR. NO.', part: 'PART NO.', wo: 'W.O. NO.',
   qty: 'QTY.', rate: 'RATE PER Pc.', despQty: 'DESP. QTY.', despAmt: 'DESP. AMT.'
 };
 // Close on backdrop click

@@ -52,6 +52,14 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, Long> {
         @Param("invoiceStatus") WorkOrder.StepStatus invoiceStatus
     );
 
+    // Export Issues: dispatches with a recorded invoice issue (no PO / rate mismatch / etc.)
+    // generated in a given month. SQL Server's TEXT type rejects <> / LTRIM directly, so
+    // blank-but-non-null values (none exist today) are filtered out in the service layer instead.
+    @Query("SELECT w FROM WorkOrder w WHERE MONTH(w.woDate) = :month AND YEAR(w.woDate) = :year " +
+           "AND w.invoiceIssue IS NOT NULL " +
+           "ORDER BY w.invoiceIssueUpdatedAt ASC")
+    List<WorkOrder> findIssuesByMonthAndYear(@Param("month") int month, @Param("year") int year);
+
     // Combined search: customer + month/year
     @Query("SELECT w FROM WorkOrder w WHERE " +
            "(:customer IS NULL OR LOWER(w.customerName) LIKE LOWER(CONCAT('%', :customer, '%'))) AND " +
