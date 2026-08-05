@@ -58,7 +58,7 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, Long> {
     // (none exist today) are filtered out in the service layer instead.
     @Query("SELECT w FROM WorkOrder w WHERE w.woDate BETWEEN :startDate AND :endDate " +
            "AND w.invoiceIssue IS NOT NULL " +
-           "ORDER BY w.woDate ASC, w.invoiceIssueUpdatedAt ASC")
+           "ORDER BY w.invoiceIssueUpdatedAt ASC")
     List<WorkOrder> findIssuesByDateRange(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
 
     // Combined search: customer + month/year
