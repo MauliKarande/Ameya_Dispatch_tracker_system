@@ -1,6 +1,7 @@
 package com.ameya.invoicetracker.config;
 
 import com.ameya.invoicetracker.security.JwtAuthFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.*;
 import org.springframework.security.authentication.*;
@@ -35,6 +36,16 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // Without this, Spring Security's default for "no/expired/invalid JWT" is 403 —
+            // indistinguishable from a real role-permission denial. The frontend only knows to
+            // auto-redirect to login on 401, so an expired session silently showed no data
+            // instead of prompting a fresh login. This restores correct REST semantics:
+            // 401 = not authenticated (session expired), 403 = authenticated but not permitted.
+            .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
+                response.getWriter().write("{\"success\":false,\"message\":\"Session expired. Please log in again.\",\"data\":null}");
+            }))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
                     "/api/auth/**", "/", "/index.html", "/static/**",

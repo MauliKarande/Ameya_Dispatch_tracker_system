@@ -1217,9 +1217,14 @@ async function openWoDetail(id_) {
   navigateTo('detail');
   localStorage.setItem('lastWoId', id_);
   id('woDetailContent').innerHTML = '<div class="loading-state">Loading dispatch details...</div>';
+  // Tracks the most recently requested DL — if the user clicks another DL before
+  // this fetch resolves, a late/out-of-order response must not overwrite the
+  // newer one that already loaded.
+  State.pendingWoRequestId = id_;
   try {
     const res = await api(`/api/workorders/${id_}`);
     if (!res || !res.data) throw new Error("Empty response from server");
+    if (State.pendingWoRequestId !== id_) return; // superseded by a newer openWoDetail call
     State.currentWo = res.data;
     try {
       renderWoDetail(res.data);
@@ -1228,6 +1233,7 @@ async function openWoDetail(id_) {
       throw new Error("Failed to render dispatch details due to unexpected data format.");
     }
   } catch(e) {
+    if (State.pendingWoRequestId !== id_) return;
     console.error("Error opening dispatch detail:", e);
     id('woDetailContent').innerHTML = `
       <div class="empty-state">
@@ -1236,6 +1242,17 @@ async function openWoDetail(id_) {
         <button class="btn btn-primary" onclick="openWoDetail(${id_})">⟳ Retry Loading</button>
       </div>`;
   }
+}
+
+// Applies a WorkOrder update response to the detail page only if the user
+// hasn't since navigated to a different dispatch — guards against a slow
+// action on DL A (upload, revision, etc.) silently snapping the screen back
+// to DL A after the user has already moved on to DL B.
+function applyWoDetailUpdate(requestedWoId, updatedWo) {
+  if (State.page !== 'detail' || State.currentWo?.id !== requestedWoId) return false;
+  State.currentWo = updatedWo;
+  renderWoDetail(updatedWo);
+  return true;
 }
 
 function renderWoDetail(wo) {
@@ -1553,10 +1570,10 @@ function showLogsModal(wo) {
 function bindDetailActions(wo) {
   // Stock
   id('stockDoneBtn')?.addEventListener('click', async () => {
-    await patchStatus(`/api/workorders/${wo.id}/stock?action=DONE`, 'Stock marked Done');
+    await patchStatus(`/api/workorders/${wo.id}/stock?action=DONE`, 'Stock marked Done', wo.id);
   });
   id('stockRevertBtn')?.addEventListener('click', async () => {
-    await patchStatus(`/api/workorders/${wo.id}/stock?action=PENDING`, 'Stock reverted');
+    await patchStatus(`/api/workorders/${wo.id}/stock?action=PENDING`, 'Stock reverted', wo.id);
   });
 
   // Box Details (renamed from Packing Details)
@@ -1565,8 +1582,7 @@ function bindDetailActions(wo) {
   id('packingRevertBtn')?.addEventListener('click', async () => {
     try {
       const res = await api(`/api/workorders/${wo.id}/packaging/revert`, 'PATCH');
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       showToast('Box Details reverted', 'success');
       triggerImmediateSync();
     } catch(e) { showToast(e.message, 'error'); }
@@ -1578,8 +1594,7 @@ function bindDetailActions(wo) {
   id('packingDetailsRevertBtn')?.addEventListener('click', async () => {
     try {
       const res = await api(`/api/workorders/${wo.id}/packing-details/revert`, 'PATCH');
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       showToast('Packing Details reverted', 'success');
       triggerImmediateSync();
     } catch(e) { showToast(e.message, 'error'); }
@@ -1592,8 +1607,7 @@ function bindDetailActions(wo) {
   id('invoiceRevertBtn')?.addEventListener('click', async () => {
     try {
       const res = await api(`/api/workorders/${wo.id}/invoice/revert`, 'PATCH');
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       showToast('Invoice reverted', 'success');
       triggerImmediateSync();
     } catch(e) { showToast(e.message, 'error'); }
@@ -1602,15 +1616,15 @@ function bindDetailActions(wo) {
   // Ready For Dispatch
   id('rfdDoneBtn')?.addEventListener('click', () => showRfdOptions(wo));
   id('rfdRevertBtn')?.addEventListener('click', async () => {
-    await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=PENDING`, 'Ready For Dispatch reverted');
+    await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=PENDING`, 'Ready For Dispatch reverted', wo.id);
   });
 
   // Collection
   id('collectionDoneBtn')?.addEventListener('click', async () => {
-    await patchStatus(`/api/workorders/${wo.id}/collection?action=DONE`, 'Collection marked Done');
+    await patchStatus(`/api/workorders/${wo.id}/collection?action=DONE`, 'Collection marked Done', wo.id);
   });
   id('collectionRevertBtn')?.addEventListener('click', async () => {
-    await patchStatus(`/api/workorders/${wo.id}/collection?action=PENDING`, 'Collection reverted');
+    await patchStatus(`/api/workorders/${wo.id}/collection?action=PENDING`, 'Collection reverted', wo.id);
   });
 
   // Dispatch Info edit
@@ -1637,11 +1651,10 @@ function bindDetailActions(wo) {
   }
 }
 
-async function patchStatus(url, successMsg) {
+async function patchStatus(url, successMsg, woId) {
   try {
     const res = await api(url, 'PATCH');
-    State.currentWo = res.data;
-    renderWoDetail(res.data);
+    applyWoDetailUpdate(woId, res.data);
     showToast(successMsg, 'success');
     triggerImmediateSync();
   } catch(e) { showToast(e.message, 'error'); }
@@ -1681,8 +1694,7 @@ function showPackingModal(wo) {
     btn.disabled = true; btn.textContent = 'Saving…';
     try {
       const res = await api(`/api/workorders/${wo.id}/packaging`, 'PUT', { packingType, packagingDetails });
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       closeModal();
       showToast('Box Details saved', 'success');
       triggerImmediateSync();
@@ -1725,8 +1737,7 @@ function showPackingDetailsModal(wo) {
       const formData = new FormData();
       formData.append('packingFile', file);
       const res = await apiFormData(`/api/workorders/${wo.id}/packing-details`, formData, 'PUT');
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       closeModal();
       showToast('Packing Details uploaded', 'success');
       triggerImmediateSync();
@@ -1779,8 +1790,7 @@ function showInvoiceModal(wo, isEdit) {
       formData.append('data', new Blob([JSON.stringify({ invoiceNumber, invoiceDate })], { type:'application/json' }));
       if (pdfFile) formData.append('pdfFile', pdfFile);
       const res = await apiFormData(`/api/workorders/${wo.id}/invoice`, formData, 'PUT');
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       closeModal();
       showToast(isEdit ? 'Invoice updated' : 'Invoice marked Done', 'success');
       triggerImmediateSync();
@@ -1921,8 +1931,7 @@ function showEditDetailsModal(wo) {
     btn.disabled = true; btn.textContent = 'Saving…';
     try {
       const res = await api(`/api/workorders/${wo.id}/details`, 'PUT', { customerName, shipmentMode, invoiceType, woDate });
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       closeModal();
       showToast('Dispatch details updated', 'success');
       triggerImmediateSync();
@@ -1948,8 +1957,7 @@ function showNoteModal(wo) {
     btn.disabled = true;
     try {
       const res = await api(`/api/workorders/${wo.id}/note`, 'PUT', { noteForInvoice: id('noteText').value });
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       closeModal();
       showToast('Note saved', 'success');
     } catch(e) { showAlert(id('noteAlert'), e.message, 'error'); }
@@ -1974,8 +1982,7 @@ function showIssueModal(wo) {
     btn.disabled = true;
     try {
       const res = await api(`/api/workorders/${wo.id}/invoice-issue`, 'PUT', { invoiceIssue: id('issueText').value });
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       closeModal();
       showToast('Issue saved', 'success');
     } catch(e) { showAlert(id('issueAlert'), e.message, 'error'); }
@@ -2021,8 +2028,7 @@ function showRevisionModal(wo) {
       formData.append('revisionReason', reason);
       if (amountTotal != null) formData.append('amountTotal', amountTotal);
       const res = await apiFormData(`/api/workorders/${wo.id}/excel`, formData, 'POST');
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       closeModal();
       showToast('Revision uploaded: v'+res.data.version, 'success');
     } catch(e) { showAlert(alertEl, e.message, 'error'); }
@@ -2054,8 +2060,7 @@ function showUploadPdfModal(wo) {
       const formData = new FormData();
       formData.append('file', file);
       const res = await apiFormData(`/api/workorders/${wo.id}/invoice/pdf`, formData, 'POST');
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
       closeModal();
       showToast('PDF uploaded', 'success');
     } catch(e) { showAlert(id('pdfAlert'), e.message, 'error'); }
@@ -2413,9 +2418,13 @@ function connectSSE() {
         if (updatedWo && updatedWo.id) {
           const idx = State.woList.findIndex(w => w.id === updatedWo.id);
           if (idx >= 0) State.woList[idx] = updatedWo; else State.woList.unshift(updatedWo);
-          if (State.currentWo?.id === updatedWo.id) State.currentWo = updatedWo;
+          // Only apply to the open detail page if it's THIS dispatch — otherwise
+          // someone else's action on a different DL silently swaps in under the
+          // user while they're still working on the one they opened.
+          const isCurrentlyOpenWo = State.currentWo?.id === updatedWo.id;
+          if (isCurrentlyOpenWo) State.currentWo = updatedWo;
           if (State.page === 'dashboard') renderDashboard();
-          if (State.page === 'detail') renderWoDetail(updatedWo);
+          if (State.page === 'detail' && isCurrentlyOpenWo) renderWoDetail(updatedWo);
         }
         addNotification(eventType, messageText, updatedWo?.woNumber, updatedWo?.id);
         _sseRetryDelay = 2000;
@@ -2709,25 +2718,36 @@ async function triggerExportDownload(startDate, endDate) {
 }
 
 // ── Export Issues (Invoice Creator) ─────────────────────────────────
-// Month-filtered export of dispatches with a recorded invoice issue
-// (No PO / Rate Mismatch / etc.), in either CSV or PDF.
+// Date-range export of dispatches with a recorded invoice issue (No PO /
+// Rate Mismatch / etc.), in either CSV or PDF. From/To both default to the
+// current month, so a single month is still just two clicks; picking a
+// wider range gives a consolidated multi-month export.
 function openExportIssuesModal() {
   const now = new Date();
   const curMonth = now.getMonth() + 1;
   const curYear = now.getFullYear();
-  const monthOptions = MONTHS_FULL.map((m, i) =>
-    `<option value="${i + 1}" ${i + 1 === curMonth ? 'selected' : ''}>${m}</option>`).join('');
-  const yearOptions = Array.from({ length: 4 }, (_, i) => curYear - i)
-    .map(y => `<option value="${y}" ${y === curYear ? 'selected' : ''}>${y}</option>`).join('');
+  const monthOptionsFor = (selected) => MONTHS_FULL.map((m, i) =>
+    `<option value="${i + 1}" ${i + 1 === selected ? 'selected' : ''}>${m}</option>`).join('');
+  const yearOptionsFor = (selected) => Array.from({ length: 4 }, (_, i) => curYear - i)
+    .map(y => `<option value="${y}" ${y === selected ? 'selected' : ''}>${y}</option>`).join('');
 
   showModal('Export Issues', `
-    <div style="display:flex; flex-direction:column; gap:12px;">
-      <label>Month
-        <select id="issueExportMonth" class="filter-select" style="width:100%">${monthOptions}</select>
-      </label>
-      <label>Year
-        <select id="issueExportYear" class="filter-select" style="width:100%">${yearOptions}</select>
-      </label>
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      <div>
+        <div style="font-size:.78rem;font-weight:600;color:var(--text2);margin-bottom:6px">From</div>
+        <div style="display:flex;gap:8px">
+          <select id="issueExportFromMonth" class="filter-select" style="flex:1">${monthOptionsFor(curMonth)}</select>
+          <select id="issueExportFromYear" class="filter-select" style="flex:1">${yearOptionsFor(curYear)}</select>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.78rem;font-weight:600;color:var(--text2);margin-bottom:6px">To</div>
+        <div style="display:flex;gap:8px">
+          <select id="issueExportToMonth" class="filter-select" style="flex:1">${monthOptionsFor(curMonth)}</select>
+          <select id="issueExportToYear" class="filter-select" style="flex:1">${yearOptionsFor(curYear)}</select>
+        </div>
+      </div>
+      <div style="font-size:.75rem;color:var(--text3)">Pick the same month for both to export a single month, or a wider range for a consolidated export.</div>
     </div>`, [
     { label: 'Cancel', cls: 'btn-outline', close: true },
     { label: '⬇ CSV', cls: 'btn-outline', id: 'issueExportCsvBtn' },
@@ -2735,9 +2755,16 @@ function openExportIssuesModal() {
   ]);
 
   const doExport = (format) => {
-    const month = getVal('issueExportMonth');
-    const year = getVal('issueExportYear');
-    const url = `/api/export/issues/${format}?year=${year}&month=${month}&token=${State.token}`;
+    const fromMonth = parseInt(getVal('issueExportFromMonth'), 10);
+    const fromYear  = parseInt(getVal('issueExportFromYear'), 10);
+    const toMonth   = parseInt(getVal('issueExportToMonth'), 10);
+    const toYear    = parseInt(getVal('issueExportToYear'), 10);
+    let startDate = `${fromYear}-${String(fromMonth).padStart(2,'0')}-01`;
+    let endDate;
+    const lastDay = new Date(toYear, toMonth, 0).getDate();
+    endDate = `${toYear}-${String(toMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    if (startDate > endDate) { showToast('"From" must be before or the same as "To"', 'error'); return; }
+    const url = `/api/export/issues/${format}?startDate=${startDate}&endDate=${endDate}&token=${State.token}`;
     const a = document.createElement('a');
     a.href = url;
     a.click();
@@ -4661,7 +4688,7 @@ function showRfdOptions(wo) {
   );
   id('rfdOptDone')?.addEventListener('click', async () => {
     closeModal();
-    await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=DONE`, 'Ready For Dispatch marked Done');
+    await patchStatus(`/api/workorders/${wo.id}/ready-for-dispatch?action=DONE`, 'Ready For Dispatch marked Done', wo.id);
   });
   id('rfdOptShort')?.addEventListener('click', () => { closeModal(); openSupplyModal(wo, 'SHORT'); });
   id('rfdOptExceed')?.addEventListener('click', () => { closeModal(); openSupplyModal(wo, 'EXCEED'); });
@@ -4866,8 +4893,7 @@ async function submitSupplyEntries(wo, supplyType) {
     showToast('Supply entries saved & Ready For Dispatch marked!', 'success');
     // Refresh DL detail
     const res = await api(`/api/workorders/${wo.id}`);
-    State.currentWo = res.data;
-    renderWoDetail(res.data);
+    applyWoDetailUpdate(wo.id, res.data);
     triggerImmediateSync();
     // Refresh cart badge
     refreshCartBadge();
@@ -4951,12 +4977,14 @@ function renderSupplyEntriesSection(wo, role) {
 }
 
 async function resolveSupplyEntry(entryId) {
+  const woId = State.currentWo?.id;
   try {
     await api(`/api/supply/entry/${entryId}/resolve`, 'PATCH');
     showToast('Entry marked as done', 'success');
-    const res = await api(`/api/workorders/${State.currentWo.id}`);
-    State.currentWo = res.data;
-    renderWoDetail(res.data);
+    if (woId) {
+      const res = await api(`/api/workorders/${woId}`);
+      applyWoDetailUpdate(woId, res.data);
+    }
     refreshCartBadge();
   } catch(e) { showToast(e.message, 'error'); }
 }
@@ -4996,8 +5024,7 @@ function showRemarkModal(wo) {
       closeModal();
       showToast('Remark saved', 'success');
       const res = await api(`/api/workorders/${wo.id}`);
-      State.currentWo = res.data;
-      renderWoDetail(res.data);
+      applyWoDetailUpdate(wo.id, res.data);
     } catch(e) {
       const a = id('remarkAlert');
       if (a) { a.textContent = e.message; a.style.display = 'block'; }

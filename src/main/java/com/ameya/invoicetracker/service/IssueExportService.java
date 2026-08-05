@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
@@ -28,8 +29,8 @@ public class IssueExportService {
 
     private final WorkOrderRepository workOrderRepository;
 
-    public List<WorkOrder> findIssues(int month, int year) {
-        return workOrderRepository.findIssuesByMonthAndYear(month, year).stream()
+    public List<WorkOrder> findIssues(LocalDate startDate, LocalDate endDate) {
+        return workOrderRepository.findIssuesByDateRange(startDate, endDate).stream()
                 .filter(w -> w.getInvoiceIssue() != null && !w.getInvoiceIssue().isBlank())
                 .toList();
     }
@@ -49,7 +50,7 @@ public class IssueExportService {
         return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    public byte[] buildPdf(List<WorkOrder> rows, String monthLabel) throws Exception {
+    public byte[] buildPdf(List<WorkOrder> rows, String rangeLabel) throws Exception {
         Document doc = new Document(PageSize.A4.rotate(), 24, 24, 36, 24);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         PdfWriter.getInstance(doc, baos);
@@ -59,7 +60,7 @@ public class IssueExportService {
         Font headFont  = new Font(Font.HELVETICA, 9, Font.BOLD, Color.WHITE);
         Font cellFont  = new Font(Font.HELVETICA, 8.5f, Font.NORMAL);
 
-        Paragraph title = new Paragraph("Export Issues — " + monthLabel, titleFont);
+        Paragraph title = new Paragraph("Export Issues — " + rangeLabel, titleFont);
         title.setSpacingAfter(10);
         doc.add(title);
 
@@ -75,7 +76,7 @@ public class IssueExportService {
         }
 
         if (rows.isEmpty()) {
-            PdfPCell empty = new PdfPCell(new Phrase("No issues recorded for this month", cellFont));
+            PdfPCell empty = new PdfPCell(new Phrase("No issues recorded for this period", cellFont));
             empty.setColspan(HEADERS.length);
             empty.setPadding(10);
             table.addCell(empty);

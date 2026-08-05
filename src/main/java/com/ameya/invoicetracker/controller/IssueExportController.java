@@ -9,14 +9,14 @@ import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Month;
-import java.time.format.TextStyle;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
 
 /**
- * Export Issues: month-filtered CSV/PDF export of dispatches with a recorded
- * invoice issue (No PO / Rate Mismatch / etc.), for the Invoice Creator.
+ * Export Issues: CSV/PDF export of dispatches with a recorded invoice issue
+ * (No PO / Rate Mismatch / etc.), for the Invoice Creator. Accepts a date
+ * range so a single month or a consolidated multi-month period both work.
  */
 @RestController
 @RequestMapping("/api/export/issues")
@@ -24,13 +24,15 @@ import java.util.Locale;
 @PreAuthorize("hasRole('INVOICE_CREATOR')")
 public class IssueExportController {
 
+    private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("MMMM yyyy");
+
     private final IssueExportService issueExportService;
 
     @GetMapping("/csv")
-    public ResponseEntity<Resource> csv(@RequestParam int year, @RequestParam int month) {
-        List<WorkOrder> rows = issueExportService.findIssues(month, year);
+    public ResponseEntity<Resource> csv(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) {
+        List<WorkOrder> rows = issueExportService.findIssues(startDate, endDate);
         byte[] bytes = issueExportService.buildCsv(rows);
-        String filename = "Export Issues " + monthLabel(month, year) + ".csv";
+        String filename = "Export Issues " + rangeLabel(startDate, endDate) + ".csv";
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("text/csv"))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
@@ -39,10 +41,10 @@ public class IssueExportController {
     }
 
     @GetMapping("/pdf")
-    public ResponseEntity<Resource> pdf(@RequestParam int year, @RequestParam int month) throws Exception {
-        List<WorkOrder> rows = issueExportService.findIssues(month, year);
-        byte[] bytes = issueExportService.buildPdf(rows, monthLabel(month, year));
-        String filename = "Export Issues " + monthLabel(month, year) + ".pdf";
+    public ResponseEntity<Resource> pdf(@RequestParam LocalDate startDate, @RequestParam LocalDate endDate) throws Exception {
+        List<WorkOrder> rows = issueExportService.findIssues(startDate, endDate);
+        byte[] bytes = issueExportService.buildPdf(rows, rangeLabel(startDate, endDate));
+        String filename = "Export Issues " + rangeLabel(startDate, endDate) + ".pdf";
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
@@ -50,7 +52,10 @@ public class IssueExportController {
                 .body(new ByteArrayResource(bytes));
     }
 
-    private String monthLabel(int month, int year) {
-        return Month.of(month).getDisplayName(TextStyle.FULL, Locale.ENGLISH) + " " + year;
+    // Same calendar month → "July 2026"; otherwise → "July 2026 to September 2026"
+    private String rangeLabel(LocalDate startDate, LocalDate endDate) {
+        String startLabel = startDate.format(MONTH_FMT);
+        String endLabel = endDate.format(MONTH_FMT);
+        return startLabel.equals(endLabel) ? startLabel : startLabel + " to " + endLabel;
     }
 }

@@ -53,12 +53,13 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, Long> {
     );
 
     // Export Issues: dispatches with a recorded invoice issue (no PO / rate mismatch / etc.)
-    // generated in a given month. SQL Server's TEXT type rejects <> / LTRIM directly, so
-    // blank-but-non-null values (none exist today) are filtered out in the service layer instead.
-    @Query("SELECT w FROM WorkOrder w WHERE MONTH(w.woDate) = :month AND YEAR(w.woDate) = :year " +
+    // generated in a date range — a single month, or consolidated across several months.
+    // SQL Server's TEXT type rejects <> / LTRIM directly, so blank-but-non-null values
+    // (none exist today) are filtered out in the service layer instead.
+    @Query("SELECT w FROM WorkOrder w WHERE w.woDate BETWEEN :startDate AND :endDate " +
            "AND w.invoiceIssue IS NOT NULL " +
-           "ORDER BY w.invoiceIssueUpdatedAt ASC")
-    List<WorkOrder> findIssuesByMonthAndYear(@Param("month") int month, @Param("year") int year);
+           "ORDER BY w.woDate ASC, w.invoiceIssueUpdatedAt ASC")
+    List<WorkOrder> findIssuesByDateRange(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
 
     // Combined search: customer + month/year
     @Query("SELECT w FROM WorkOrder w WHERE " +
