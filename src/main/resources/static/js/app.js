@@ -3136,6 +3136,7 @@ function _findInvoiceColumns(ws, range, visCols) {
     { key: 'customer', test: v => /cust/i.test(v) },
     { key: 'sr',       test: v => /\bsr\b/i.test(v) },
     { key: 'part',     test: v => /part/i.test(v) },
+    { key: 'wo',       test: v => /w\.?\s*o\.?\s*no/i.test(v) },
     { key: 'qty',      test: v => /qty|quantity/i.test(v) && !/desp/i.test(v) },
     { key: 'rate',     test: v => /rate/i.test(v) },
     { key: 'despQty',  test: v => /desp/i.test(v) && /qt/i.test(v) && !/amt/i.test(v) },
@@ -3236,32 +3237,24 @@ async function viewExcelInvoice(fileId, fileName) {
     }
 
     const { dataStartRow, colMap } = found;
-    const ORDER = ['po','customer','sr','part','qty','rate','despQty','despAmt'];
+    // W.O. NO. is a real column in the source Excel sheet (shown between PART NO.
+    // and QTY.) — read per-row like every other column, not our own DL number.
+    const ORDER = ['po','customer','sr','part','wo','qty','rate','despQty','despAmt'];
     const presentKeys = ORDER.filter(k => k in colMap);
-    // W.O. NO. isn't an Excel column — it's this dispatch's own number, shown as a
-    // constant column right after PART NO. for every row in the sheet.
-    const partIdx = presentKeys.indexOf('part');
-    const woInsertIdx = partIdx >= 0 ? partIdx + 1 : presentKeys.length;
-    const woNumber = State.currentWo?.woNumber || '';
     colLabels = presentKeys.map(k => targets_labels[k]);
-    colLabels.splice(woInsertIdx, 0, targets_labels.wo);
     // Same as renderExcelSheet: skip hidden rows
     const rowHidden = ws['!rows'] || [];
-    const excelAmtIdx = presentKeys.indexOf('despAmt');
-    amtColIdx = colLabels.indexOf(targets_labels.despAmt);
+    amtColIdx = presentKeys.indexOf('despAmt');
 
     // Collect rows — same hidden-row logic as View; additionally filter by despAmt
     for (let r = dataStartRow; r <= range.e.r; r++) {
       if (rowHidden[r]?.hidden) continue;
-      const excelVals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
+      const vals = presentKeys.map(k => _getCellText(ws, r, colMap[k]));
       // Use _isDash to handle hyphen, en-dash, em-dash, Unicode minus, empty
-      const amtVal = excelAmtIdx >= 0 ? excelVals[excelAmtIdx] : '';
+      const amtVal = amtColIdx >= 0 ? vals[amtColIdx] : '';
       if (_isDash(amtVal) || amtVal === '0') continue;
-      const vals = [...excelVals];
-      vals.splice(woInsertIdx, 0, woNumber);
       // Subtotal/total row: only DESP. AMT. filled — keep the last one to show at bottom
-      // (checked against the Excel-derived values only, since W.O. NO. is always filled)
-      if (excelVals.filter(v => v).length < 2) { excelTotalRow = vals; continue; }
+      if (vals.filter(v => v).length < 2) { excelTotalRow = vals; continue; }
       invoiceRows.push(vals);
     }
 
