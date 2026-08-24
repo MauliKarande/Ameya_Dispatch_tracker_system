@@ -25,7 +25,7 @@ public class TallyInvoiceService {
     @Value("${app.tally.url:http://localhost:9000}")
     private String tallyUrl;
 
-    @Value("${app.tally.company-name:AMEYA PRECISION ENGINEERS LIMITED  25-26}")
+    @Value("${app.tally.company-name:AMEYA PRECISION ENGINEERS LIMITED  26-27}")
     private String companyName;
 
     @Value("${app.tally.sales-ledger:EXPORT LUT BOND}")
